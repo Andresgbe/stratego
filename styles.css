@@ -1,0 +1,201 @@
+/* ===== RESET BÁSICO ===== */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: #0f1a14;
+  color: #e6e6e6;
+  line-height: 1.5;
+}
+
+/* ===== ESTRUCTURA GENERAL ===== */
+header,
+main,
+footer {
+  max-width: 1100px;
+  margin: auto;
+  padding: 16px;
+}
+
+header {
+  text-align: center;
+}
+
+footer {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+/* ===== TÍTULOS ===== */
+h1 {
+  margin-bottom: 4px;
+}
+
+h2 {
+  margin-top: 0;
+  border-bottom: 1px solid #2f4f3f;
+  padding-bottom: 6px;
+}
+
+/* ===== SECCIONES ===== */
+section {
+    margin-bottom: 24px;
+    padding: 16px;
+    background-color: #15241c;
+    border-radius: 8px;
+    margin-bottom: 32px;
+    padding: 20px;
+}
+
+/* ===== LISTA DE OFICIALES ===== */
+#lobby-officers ul {
+  list-style: none;
+  padding: 0;
+}
+
+#lobby-officers li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #2f4f3f;
+}
+
+#lobby-officers li:last-child {
+  border-bottom: none;
+}
+
+#lobby-officers button {
+  padding: 6px 10px;
+}
+
+/* ===== BOTONES ===== */
+button {
+  background-color: #2f7d4a;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #35995a;
+}
+
+button:disabled {
+  background-color: #555;
+  cursor: not-allowed;
+}
+
+/* ===== FORMULARIOS ===== */
+fieldset {
+  border: 1px solid #2f4f3f;
+  padding: 10px;
+}
+
+legend {
+  padding: 0 6px;
+}
+
+label {
+  cursor: pointer;
+}
+
+/* ===== CHAT ===== */
+#lobby-chat div {
+    background-color: #0f1a14;
+    padding: 10px;
+    margin-bottom: 10px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.9rem;
+}
+
+#lobby-chat p {
+  margin: 4px 0;
+}
+
+#lobby-chat input[type="text"] {
+  width: 70%;
+  padding: 6px;
+}
+
+#lobby-chat button {
+  padding: 6px 12px;
+}
+
+/* ===== SEPARADORES ===== */
+hr {
+  border: none;
+  border-top: 1px solid #2f4f3f;
+  margin: 24px 0;
+}
+
+header h1 {
+  font-size: 2.2rem;
+  margin-bottom: 0;
+}
+
+header p {
+  margin-top: 4px;
+  color: #9fb3a6;
+  font-size: 1rem;
+}
+
+#lobby-officers li span {
+  margin-left: 8px;
+  font-size: 0.9rem;
+  color: #9fb3a6;
+}
+
+#lobby-officers li strong {
+  font-size: 1rem;
+}
+
+button {
+  padding: 8px 14px;
+  font-size: 0.95rem;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+input[type="text"] {
+  background-color: #0f1a14;
+  border: 1px solid #2f4f3f;
+  color: #e6e6e6;
+  border-radius: 4px;
+}
+
+input[type="text"]::placeholder {
+  color: #7f9c8c;
+}
+
+/* ===== SELECCIÓN DE OFICIAL ===== */
+#lobby-officers li.is-selected {
+  outline: 2px solid #35995a;
+  border-radius: 6px;
+  padding-left: 8px;
+}
+
+/* ===== MENSAJE DE ESTADO DEL RETO ===== */
+#challenge-status {
+  margin: 8px 0 14px;
+  color: #9fb3a6;
+  min-height: 18px;
+}
+
+#challenge-status.is-error {
+  color: #ffb3b3;
+}
+
+#challenge-status.is-ok {
+  color: #b6f5c5;
+}

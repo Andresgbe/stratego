@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8">
+    <title>Stratego — Club de Oficiales</title>
+</head>
+<body>
+
+  <!-- ===== ENCABEZADO ===== -->
+  <header>
+    <h1>Club de Oficiales</h1>
+    <p>Lobby público</p>
+  </header>
+
+  <hr>
+
+  <!-- ===== CONTENIDO PRINCIPAL ===== -->
+  <main>
+
+    <!-- === SECCIÓN: OFICIALES CONECTADOS === -->
+    <section id="lobby-officers">
+      <h2>Oficiales conectados</h2>
+
+      <ul>
+        <li>
+          <strong>Oficial Rojas</strong>
+          <span>— disponible</span>
+          <button data-officer="Oficial Rojas">Retar</button>
+        </li>
+        <li>
+          <strong>Capitana Vega</strong>
+          <span>— en partida</span>
+          <button data-officer="Capitana Vega" disabled>Retar</button>
+        </li>
+        <li>
+          <strong>Teniente Silva</strong>
+          <span>— disponible</span>
+          <button data-officer="Teniente Silva">Retar</button>
+        </li>
+      </ul>
+    </section>
+
+    <hr>
+
+    <!-- === SECCIÓN: CONFIGURACIÓN DEL RETO === -->
+    <section id="lobby-challenge">
+      <h2>Reto</h2>
+
+      <p>Configura el enfrentamiento antes de enviar el reto.</p>
+
+      <!-- Modalidad -->
+      <fieldset>
+        <legend>Modalidad</legend>
+
+        <label>
+          <input type="radio" name="mode" value="classic" checked>
+          Guerra Clásica (40)
+        </label>
+        <br>
+        <label>
+          <input type="radio" name="mode" value="quick">
+          Duelo Rápido (10)
+        </label>
+      </fieldset>
+
+      <br>
+
+      <!-- Protocolo principal -->
+      <fieldset>
+        <legend>Protocolo principal (lo decide el retador)</legend>
+
+        <label>
+          <input type="radio" name="protocol" value="fetch" checked>
+          Fetch + SSE
+        </label>
+        <br>
+        <label>
+          <input type="radio" name="protocol" value="socket">
+          WebSockets
+        </label>
+      </fieldset>
+
+      <br>
+
+    <p id="challenge-status" aria-live="polite"></p>
+
+      <!-- Acciones -->
+        <button id="btn-send-challenge">Enviar reto</button>
+        <button id="btn-start-pve">Simular vs Autómata</button>
+    </section>
+
+    <hr>
+
+    <!-- === SECCIÓN: CHAT GLOBAL === -->
+    <section id="lobby-chat">
+      <h2>Chat global</h2>
+
+      <div>
+        <p>
+          <strong>Capitana Vega:</strong>
+          ¿alguien para un duelo rápido?
+        </p>
+        <p>
+          <strong>Teniente Silva:</strong>
+          en un momento
+        </p>
+      </div>
+
+      <form id="chat-form">
+        <label for="chat-message">Mensaje</label><br>
+        <input
+          type="text"
+          id="chat-message"
+          name="chat-message"
+          placeholder="Escribe un mensaje"
+        >
+        <button type="submit">Enviar</button>
+      </form>
+    </section>
+
+  </main>
+
+  <hr>
+
+  <!-- ===== PIE ===== -->
+  <footer>
+    <p>Stratego — Etapa I · Club de Oficiales</p>
+    </footer>
+    <script src="app.js"></script>
+
+</body>
+</html>
