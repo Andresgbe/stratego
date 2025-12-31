@@ -1,0 +1,265 @@
+/* ETAPA II*/
+
+/* Contenedor principal para pantallas de juego (Full Height) */
+#war-room-container {
+    display: flex;
+    flex-wrap: wrap; /* Para móviles si fuera necesario */
+    height: calc(100vh - 100px); /* Restamos header/footer aprox */
+    gap: 16px;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 10px;
+}
+
+/* === COLUMNA IZQUIERDA: EL TABLERO === */
+.board-section {
+    flex: 2; /* Ocupa 2/3 del espacio */
+    background-color: #15241c; /* Tu color de sección */
+    border: 1px solid #2f4f3f;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+    min-width: 520px; /* Asegura espacio para el tablero de 500px */
+}
+
+/* El Tablero (Grid 10x10) */
+#game-board {
+    display: grid;
+    grid-template-columns: repeat(10, 50px);
+    grid-template-rows: repeat(10, 50px);
+    gap: 2px;
+    background-color: #0f1a14; /* Fondo oscuro entre celdas */
+    border: 4px solid #2f4f3f;
+    box-shadow: 0 0 15px rgba(0,0,0,0.5);
+}
+
+/* Celdas del tablero */
+.cell {
+    width: 50px;
+    height: 50px;
+    background-color: #2a3d33; /* Un verde un poco más claro que el fondo */
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Lagos (No transitables) */
+.cell.water {
+    background-color: #1e3a5f; /* Azul oscuro desaturado para no romper el tema */
+    border: 1px dashed #2f4f3f;
+    opacity: 0.8;
+}
+
+/* Zona de despliegue (Filas válidas) */
+.cell.deploy-zone {
+    background-color: #2f4f3f; /* Mismo color que tus bordes */
+    border: 1px solid #35995a; /* Verde botón para indicar "activo" */
+}
+
+/* Efecto visual al arrastrar sobre una celda válida */
+.cell.drag-over {
+    background-color: #35995a !important;
+    box-shadow: inset 0 0 10px #000;
+}
+
+/* === COLUMNA DERECHA: CONTROLES Y CHAT === */
+.controls-section {
+    flex: 1; /* Ocupa 1/3 del espacio */
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 300px;
+}
+
+/* Panel de Inventario */
+#inventory-panel {
+    background-color: #15241c;
+    border: 1px solid #2f4f3f;
+    border-radius: 8px;
+    padding: 16px;
+    flex: 1; /* Crece para ocupar espacio disponible */
+    display: flex;
+    flex-direction: column;
+}
+
+#inventory-panel h3 {
+    margin-top: 0;
+    border-bottom: 1px solid #2f4f3f;
+    padding-bottom: 8px;
+    font-size: 1.1rem;
+    color: #e6e6e6;
+}
+
+/* Grid de piezas en el inventario */
+.inventory-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    overflow-y: auto;
+    padding: 10px 0;
+    max-height: 300px; /* Scroll si hay muchas piezas */
+}
+
+/* === LAS PIEZAS (Tokens) === */
+.piece {
+    width: 44px;
+    height: 44px;
+    background-color: #8a1c1c; /* Rojo militar oscuro */
+    color: #fff;
+    border: 2px solid #b71c1c;
+    border-radius: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    font-family: monospace;
+    font-size: 14px;
+    cursor: grab;
+    user-select: none;
+    box-shadow: 2px 2px 4px rgba(0,0,0,0.4);
+    transition: transform 0.1s;
+    z-index: 10;
+}
+
+.piece:hover {
+    transform: scale(1.1);
+    border-color: #ff5252;
+}
+
+.piece:active {
+    cursor: grabbing;
+}
+
+/* === PANELES DE ACCIÓN Y CHAT === */
+.action-panel {
+    background-color: #15241c;
+    border: 1px solid #2f4f3f;
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.btn-group {
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+}
+
+/* Ajustes de botones específicos */
+#btn-ready-war {
+    width: 100%;
+    background-color: #d32f2f; /* Rojo alerta */
+    font-weight: bold;
+    letter-spacing: 1px;
+    padding: 12px;
+    margin-top: 10px;
+}
+
+#btn-ready-war:hover {
+    background-color: #b71c1c;
+}
+
+#btn-surrender {
+    background-color: transparent;
+    border: 1px solid #555;
+    color: #aaa;
+    font-size: 0.8rem;
+}
+
+#btn-surrender:hover {
+    background-color: #333;
+    color: #fff;
+}
+
+/* === CHAT PRIVADO (Estilo heredado del lobby pero ajustado) === */
+#private-chat-container {
+    background-color: #15241c;
+    border: 1px solid #2f4f3f;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    height: 200px;
+    overflow: hidden;
+}
+
+#private-chat-container h4 {
+    margin: 0;
+    padding: 8px;
+    background-color: #0f1a14;
+    font-size: 0.9rem;
+    text-align: center;
+    border-bottom: 1px solid #2f4f3f;
+}
+
+#private-chat {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    font-size: 0.85rem;
+    font-family: monospace;
+    color: #9fb3a6;
+}
+
+.chat-input-area {
+    display: flex;
+    border-top: 1px solid #2f4f3f;
+}
+
+.chat-input-area input {
+    flex: 1;
+    background: #0f1a14;
+    border: none;
+    color: #e6e6e6;
+    padding: 8px;
+}
+
+.chat-input-area button {
+    border-radius: 0;
+    padding: 0 15px;
+}
+
+/* === OVERLAY DE ESPERA (Handshake) === */
+#waiting-overlay {
+    position: absolute;
+    top: 0; left: 0; 
+    width: 100%; height: 100%;
+    background: rgba(15, 26, 20, 0.95); /* Fondo muy oscuro semi-transparente */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    text-align: center;
+}
+
+.spinner {
+    border: 4px solid #15241c; 
+    border-top: 4px solid #35995a; /* Verde brillante */
+    border-radius: 50%; 
+    width: 50px; height: 50px; 
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+}
+
+@keyframes spin { 
+    0% { transform: rotate(0deg); } 
+    100% { transform: rotate(360deg); } 
+}
+
+/* Utilidad para ocultar elementos (SPA) */
+.hidden {
+    display: none !important;
+}

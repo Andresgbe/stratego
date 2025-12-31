@@ -44,12 +44,12 @@ h2 {
 
 /* ===== SECCIONES ===== */
 section {
-    margin-bottom: 24px;
-    padding: 16px;
-    background-color: #15241c;
-    border-radius: 8px;
-    margin-bottom: 32px;
-    padding: 20px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background-color: #15241c;
+  border-radius: 8px;
+  margin-bottom: 32px;
+  padding: 20px;
 }
 
 /* ===== LISTA DE OFICIALES ===== */
@@ -108,13 +108,13 @@ label {
 
 /* ===== CHAT ===== */
 #lobby-chat div {
-    background-color: #0f1a14;
-    padding: 10px;
-    margin-bottom: 10px;
-    max-height: 200px;
-    overflow-y: auto;
-    font-family: monospace;
-    font-size: 0.9rem;
+  background-color: #0f1a14;
+  padding: 10px;
+  margin-bottom: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.9rem;
 }
 
 #lobby-chat p {
@@ -198,4 +198,9 @@ input[type="text"]::placeholder {
 
 #challenge-status.is-ok {
   color: #b6f5c5;
+}
+
+/* ===== UTILIDAD SPA ===== */
+.hidden {
+  display: none !important;
 }

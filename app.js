@@ -11,6 +11,25 @@ const officersListItems = Array.from(document.querySelectorAll("#lobby-officers 
 const btnSendChallenge = document.getElementById("btn-send-challenge");
 const btnStartPve = document.getElementById("btn-start-pve");
 
+// Navegación SPA
+const lobbyScreen = document.getElementById("lobby-screen");
+const warRoom = document.getElementById("war-room");
+const btnBackLobby = document.getElementById("btn-back-lobby");
+
+function showWarRoom() {
+  if (lobbyScreen) lobbyScreen.classList.add("hidden");
+  if (warRoom) warRoom.classList.remove("hidden");
+}
+
+function showLobby() {
+  if (warRoom) warRoom.classList.add("hidden");
+  if (lobbyScreen) lobbyScreen.classList.remove("hidden");
+}
+
+if (btnBackLobby) {
+  btnBackLobby.addEventListener("click", showLobby);
+}
+
 function setStatus(message, type = "neutral") {
   if (!statusEl) return;
 
@@ -90,7 +109,8 @@ btnSendChallenge.addEventListener("click", () => {
   setStatus(`Reto enviado a ${payload.to} (${payload.mode}, ${payload.protocol})`, "ok");
   console.log("Enviar reto:", payload);
 
-  // Aquí luego conectamos Fetch/SSE o WebSocket de verdad (Etapa II)
+  // Pasar a Etapa II (Cuarto de Guerra)
+  showWarRoom();
 });
 
 // 5) Botón PvE
@@ -99,7 +119,8 @@ btnStartPve.addEventListener("click", () => {
   setStatus(`Iniciando PvE en modo ${payload.mode}...`, "ok");
   console.log("Iniciar PvE:", payload);
 
-  // Aquí luego pasamos a tablero/simulación (Etapa II/III)
+  // Pasar a Etapa II (Cuarto de Guerra)
+  showWarRoom();
 });
 
 // 6) Chat: evitar recarga y loguear mensaje (+ render en UI)
