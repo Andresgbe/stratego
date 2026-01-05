@@ -313,15 +313,19 @@ if (btnReady) {
       return;
     }
 
+    // 🔗 ETAPA III — sincronización con el engine
+    if (window.onDeploymentReady) {
+      window.onDeploymentReady(getPlacedPieces());
+    }
+
     if (overlay) overlay.classList.remove("hidden");
 
-    // Simulación: El enemigo tarda 3 segundos en estar listo
     setTimeout(() => {
       alert("¡El enemigo está listo! Inicia la batalla.");
-      // Aquí iría la lógica para pasar a Etapa III
     }, 3000);
   });
 }
+            
 
 // --- CHAT WAR ROOM (Simulado) ---
 if (warChatForm && warChatMsgs && warChatInput) {
@@ -348,3 +352,11 @@ function escapeHtml(str) {
 
 // INICIAR (solo si existe el tablero en DOM)
 if (boardEl) initBoard();
+
+export function getPlacedPieces() {
+  return structuredClone(placedPieces);
+}
+
+export function clearPlacedPieces() {
+  placedPieces = {};
+}

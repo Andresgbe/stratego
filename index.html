@@ -141,6 +141,24 @@
         <div class="board-section">
           <h2>Cuarto de Guerra: Despliegue</h2>
           <div id="game-board"></div>
+
+          <!-- ✅ Dev Panel Etapa III (mínimo para probar el engine) -->
+          <section class="warroom-devpanel">
+            <h3>War Room (Dev Panel)</h3>
+
+            <div class="row">
+              <label for="actionSelect">Acción</label>
+              <select id="actionSelect"></select>
+              <button id="doActionBtn">Ejecutar acción</button>
+            </div>
+
+            <div class="row">
+              <button id="nextPhaseBtn">Siguiente fase</button>
+            </div>
+
+            <h4>Estado (debug)</h4>
+            <pre id="stateDump" class="dump"></pre>
+          </section>
         </div>
 
         <!-- Panel lateral -->
@@ -197,9 +215,8 @@
     <p>Stratego — Etapa I · Club de Oficiales</p>
   </footer>
 
-  <!-- Scripts -->
-  <script src="app.js"></script>
-  <script src="etapa2.js"></script>
+  <!-- ✅ Scripts: UN SOLO entry point con módulos -->
+  <script type="module" src="./app.js"></script>
 
 </body>
 </html>

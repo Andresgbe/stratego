@@ -1,3 +1,83 @@
+import { initMatch } from "./gameState.js";
+import { listActions } from "./actions.js";
+import { getState, ejecutarAccion, avanzarFase } from "./gameEngine.js";
+import "./etapa2.js";
+
+let currentPlayerId = 1; // demo: jugador activo (luego lo conectas al login/rol real)
+
+function qs(id) {
+  return document.getElementById(id);
+}
+
+function renderState() {
+  const state = getState();
+  const dump = qs("stateDump");
+  if (dump) dump.textContent = JSON.stringify(state, null, 2);
+
+  // si quieres, aquí renderizas UI bonita con state.jugadores, fase, etc.
+}
+
+function populateActions() {
+  const sel = qs("actionSelect");
+  if (!sel) return;
+
+  sel.innerHTML = "";
+  listActions().forEach((a) => {
+    const opt = document.createElement("option");
+    opt.value = a.id;
+    opt.textContent = `${a.nombre} (costo ${a.costo})`;
+    sel.appendChild(opt);
+  });
+}
+
+function bindWarRoomControls() {
+  const doBtn = qs("doActionBtn");
+  const nextBtn = qs("nextPhaseBtn");
+
+  if (doBtn) {
+    doBtn.addEventListener("click", () => {
+      const actionId = qs("actionSelect")?.value;
+      const targetId = Number(qs("targetSelect")?.value || 0) || null; // opcional
+
+      const res = ejecutarAccion({
+        playerId: currentPlayerId,
+        actionId,
+        targetId,
+      });
+
+      if (!res.ok) alert(res.reason);
+      renderState();
+    });
+  }
+
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      avanzarFase();
+      renderState();
+    });
+  }
+}
+
+// DEMO de inicio de partida (en tu proyecto real: esto lo disparas desde Lobby)
+function bootDemoIfNeeded() {
+  const state = getState();
+  if (state.jugadores.length === 0) {
+    initMatch({
+      players: [
+        { nombre: "Jugador 1", rol: "General" },
+        { nombre: "Jugador 2", rol: "Diplomático" },
+      ],
+    });
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  bootDemoIfNeeded();
+  populateActions();
+  bindWarRoomControls();
+  renderState();
+});
+
 // Estado mínimo del lobby
 const lobby = {
   selectedOfficer: null,
