@@ -180,7 +180,7 @@ input[type="text"]::placeholder {
 
 /* ===== SELECCIÓN DE OFICIAL ===== */
 #lobby-officers li.is-selected {
-  outline: 2px solid #359995a;
+  outline: 2px solid #35995a;
   border-radius: 6px;
   padding-left: 8px;
 }

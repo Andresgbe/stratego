@@ -1,19 +1,56 @@
-// etapa2.js
+import {
+  STRATEGO_ARMY_CONFIG,
+} from "./gameState.js";
+import {
+  getState,
+  subscribe,
+  strategoPlaceFromInventory,
+  strategoMoveOrSwapDeployment,
+  strategoRandomizeDeployment,
+  strategoClearDeployment,
+  strategoExportDeployment,
+  strategoImportDeployment,
+  strategoSetReady,
+} from "./gameEngine.js";
 
-const ARMY_CONFIG = [
-  { rank: "B", label: "💣", count: 6, name: "Bomba" },
-  { rank: "10", label: "👮", count: 1, name: "Mariscal" },
-  { rank: "9", label: "🎖️", count: 1, name: "General" },
-  { rank: "8", label: "🔫", count: 2, name: "Coronel" },
-  { rank: "S", label: "🕵️", count: 1, name: "Espía" },
-  { rank: "F", label: "🚩", count: 1, name: "Bandera" },
-  { rank: "4", label: "💂", count: 3, name: "Sargento" }, // Reducido para ejemplo rápido
-  { rank: "2", label: "🏃", count: 4, name: "Explorador" } // Reducido para ejemplo rápido
-];
+// ===============================
+// Config / helpers
+// ===============================
+const LOCAL_PLAYER_ID = 1; // demo (luego lo conectas a login/rol)
 
-// Referencias DOM (War Room)
+function isWater(r, c) {
+  return (r === 4 || r === 5) && ((c === 2 || c === 3) || (c === 6 || c === 7));
+}
+
+function isLocalDeployZone(r) {
+  // Para el jugador local (P1): filas 0..3
+  return r >= 0 && r <= 3;
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function rankToDef(rank) {
+  return STRATEGO_ARMY_CONFIG.find((x) => x.rank === rank) || null;
+}
+
+function canInteractDeployment(state) {
+  // Regla Etapa III: Drag&Drop solo permitido durante DEPLOYMENT
+  return state?.fase === "planificacion" && state?.stratego?.phase === "DEPLOYMENT";
+}
+
+// ===============================
+// DOM refs
+// ===============================
 const boardEl = document.getElementById("game-board");
 const piecesContainer = document.getElementById("pieces-container");
+
 const btnRandom = document.getElementById("btn-randomize");
 const btnClear = document.getElementById("btn-clear-board");
 const btnReady = document.getElementById("btn-ready-war");
@@ -21,313 +58,290 @@ const btnSave = document.getElementById("btn-save-strat");
 const btnLoad = document.getElementById("btn-load-strat");
 const overlay = document.getElementById("waiting-overlay");
 
-// Chat war-room (IDs distintos al lobby)
 const warChatForm = document.getElementById("war-chat-form");
 const warChatMsgs = document.getElementById("war-chat-msgs");
 const warChatInput = document.getElementById("war-chat-input");
 
-// Estado del juego
-let placedPieces = {}; // { "cell-0-1": {rank: 'B', label: '...'}, ... }
-let inventoryState = JSON.parse(JSON.stringify(ARMY_CONFIG)); // Copia profunda
-let draggedSource = null; // Origen del arrastre
+// ===============================
+// Board: construir grid 10x10 UNA vez
+// ===============================
+let _boardBuilt = false;
+let _dragSource = null; // { source: 'inventory'|'board', rank, fromCellId? }
 
-// ==========================================
-// 1. INICIALIZACIÓN DEL TABLERO
-// ==========================================
-function initBoard() {
-  if (!boardEl) return;
-
+function ensureBoardGrid() {
+  if (!boardEl || _boardBuilt) return;
   boardEl.innerHTML = "";
 
   for (let r = 0; r < 10; r++) {
     for (let c = 0; c < 10; c++) {
       const cell = document.createElement("div");
       cell.classList.add("cell");
-      cell.dataset.row = r;
-      cell.dataset.col = c;
+      cell.dataset.row = String(r);
+      cell.dataset.col = String(c);
       cell.id = `cell-${r}-${c}`;
 
-      // Lógica de Terreno
       if (isWater(r, c)) {
         cell.classList.add("water");
-      } else if (r <= 3) {
-        cell.classList.add("deploy-zone"); // Zona válida para el jugador
-        enableDropZone(cell);
+      } else if (isLocalDeployZone(r)) {
+        cell.classList.add("deploy-zone");
       }
+
+      // Listeners (solo una vez). Validación real la hace el engine.
+      cell.addEventListener("dragover", (e) => {
+        const state = getState();
+        if (!canInteractDeployment(state)) return;
+        // solo permitir dropear si el target es válido (mejor UX)
+        if (isWater(r, c) || !isLocalDeployZone(r)) return;
+
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        cell.classList.add("drag-over");
+      });
+
+      cell.addEventListener("dragleave", () => {
+        cell.classList.remove("drag-over");
+      });
+
+      cell.addEventListener("drop", (e) => {
+        e.preventDefault();
+        cell.classList.remove("drag-over");
+
+        const state = getState();
+        if (!canInteractDeployment(state)) return;
+        if (isWater(r, c) || !isLocalDeployZone(r)) return;
+
+        let payload;
+        try {
+          payload = JSON.parse(e.dataTransfer.getData("text/plain"));
+        } catch {
+          return;
+        }
+        if (!payload) return;
+
+        const targetCellId = cell.id;
+
+        // Inventario -> Tablero
+        if (payload.source === "inventory") {
+          const res = strategoPlaceFromInventory({
+            playerId: LOCAL_PLAYER_ID,
+            rank: payload.rank,
+            targetCellId,
+          });
+          if (!res.ok) alert(res.reason);
+          return;
+        }
+
+        // Tablero -> Tablero
+        if (payload.source === "board") {
+          const res = strategoMoveOrSwapDeployment({
+            playerId: LOCAL_PLAYER_ID,
+            fromCellId: payload.fromCellId,
+            toCellId: targetCellId,
+          });
+          if (!res.ok) alert(res.reason);
+        }
+      });
 
       boardEl.appendChild(cell);
     }
   }
 
-  renderInventory();
+  _boardBuilt = true;
 }
 
-function isWater(r, c) {
-  // Lagos en Stratego: Filas 4 y 5, Columnas 2,3 y 6,7
-  return (r === 4 || r === 5) && ((c === 2 || c === 3) || (c === 6 || c === 7));
-}
-
-// ==========================================
-// 2. GESTIÓN DEL INVENTARIO
-// ==========================================
-function renderInventory() {
-  if (!piecesContainer) return;
-
-  piecesContainer.innerHTML = "";
-
-  inventoryState.forEach((item, index) => {
-    if (item.count > 0) {
-      // Crear contenedor de grupo (para mostrar cantidad)
-      const group = document.createElement("div");
-      group.style.display = "flex";
-      group.style.flexDirection = "column";
-      group.style.alignItems = "center";
-
-      // La pieza
-      const piece = createPieceElement(item.rank, item.label);
-      piece.dataset.inventoryIndex = String(index); // Para saber qué restar
-
-      // Contador
-      const countBadge = document.createElement("span");
-      countBadge.textContent = `x${item.count}`;
-      countBadge.style.fontSize = "10px";
-      countBadge.style.color = "#aaa";
-
-      group.appendChild(piece);
-      group.appendChild(countBadge);
-      piecesContainer.appendChild(group);
-    }
-  });
-}
-
-function createPieceElement(rank, label) {
+// ===============================
+// Render: board + inventario desde gameState
+// ===============================
+function createPieceElement({ rank, label, draggable, dragPayload }) {
   const div = document.createElement("div");
   div.classList.add("piece");
   div.textContent = label;
   div.dataset.rank = rank;
-  div.draggable = true;
+  div.draggable = Boolean(draggable);
 
-  // Eventos Drag (Pieza)
-  div.addEventListener("dragstart", handleDragStart);
-  div.addEventListener("dragend", handleDragEnd);
+  if (div.draggable) {
+    div.addEventListener("dragstart", (e) => {
+      const state = getState();
+      if (!canInteractDeployment(state)) {
+        e.preventDefault();
+        return;
+      }
+
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", JSON.stringify(dragPayload));
+      _dragSource = dragPayload;
+      setTimeout(() => (div.style.opacity = "0.5"), 0);
+    });
+
+    div.addEventListener("dragend", () => {
+      div.style.opacity = "1";
+      _dragSource = null;
+      document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+    });
+  }
 
   return div;
 }
 
-// ==========================================
-// 3. LÓGICA DRAG & DROP
-// ==========================================
-function handleDragStart(e) {
-  e.dataTransfer.effectAllowed = "move";
+function renderBoard(state) {
+  if (!boardEl) return;
+  ensureBoardGrid();
 
-  // Guardamos datos básicos
-  const sourceData = {
-    rank: e.target.dataset.rank,
-    label: e.target.textContent,
-    // Si viene del inventario, trae dataset.inventoryIndex; si viene del tablero no
-    inventoryIndex: e.target.dataset.inventoryIndex,
-    parentID: e.target.parentElement?.id // Para saber si viene del tablero o inventario
-  };
+  // Limpiar piezas renderizadas (no tocamos clases)
+  for (const cell of boardEl.querySelectorAll(".cell")) {
+    cell.innerHTML = "";
+  }
 
-  e.dataTransfer.setData("text/plain", JSON.stringify(sourceData));
-  draggedSource = e.target;
+  const phase = state?.stratego?.phase;
+  const board = state?.stratego?.board || {};
 
-  setTimeout(() => (e.target.style.opacity = "0.5"), 0);
-}
+  for (const [cid, piece] of Object.entries(board)) {
+    const cell = document.getElementById(cid);
+    if (!cell) continue;
 
-function handleDragEnd(e) {
-  e.target.style.opacity = "1";
-  draggedSource = null;
-  document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
-}
+    const def = rankToDef(piece.rank);
 
-function enableDropZone(cell) {
-  cell.addEventListener("dragover", (e) => {
-    e.preventDefault(); // Necesario para permitir soltar
-    e.dataTransfer.dropEffect = "move";
-    cell.classList.add("drag-over");
-  });
+    // En despliegue: solo renderizamos al jugador local
+    if (phase === "DEPLOYMENT") {
+      if (piece.ownerId !== LOCAL_PLAYER_ID) continue;
+      const label = def?.label ?? piece.rank;
 
-  cell.addEventListener("dragleave", () => {
-    cell.classList.remove("drag-over");
-  });
+      const el = createPieceElement({
+        rank: piece.rank,
+        label,
+        draggable: true,
+        dragPayload: { source: "board", fromCellId: cid, rank: piece.rank },
+      });
 
-  cell.addEventListener("drop", (e) => {
-    e.preventDefault();
-    cell.classList.remove("drag-over");
-
-    const data = JSON.parse(e.dataTransfer.getData("text/plain"));
-    const targetCellId = cell.id;
-
-    // CASO 1: Viene del Inventario -> Tablero
-    if (!cell.hasChildNodes() && data.inventoryIndex !== undefined) {
-      placePieceOnBoard(targetCellId, data.rank, data.label);
-      removeFromInventory(Number(data.inventoryIndex));
-      return;
+      cell.appendChild(el);
+      continue;
     }
 
-    // CASO 2: Movimiento dentro del tablero (Swap o Move)
-    if (data.parentID && data.parentID.startsWith("cell-")) {
-      const oldCell = document.getElementById(data.parentID);
-      if (!oldCell) return;
-      if (cell === oldCell) return; // Mismo lugar
-
-      // Si la celda destino está vacía -> Mover
-      if (!cell.hasChildNodes()) {
-        oldCell.innerHTML = "";
-        delete placedPieces[data.parentID];
-        placePieceOnBoard(targetCellId, data.rank, data.label);
-      }
-      // Si está ocupada -> Intercambiar (SWAP)
-      else {
-        const targetPiece = cell.firstChild;
-        const targetRank = targetPiece.dataset.rank;
-        const targetLabel = targetPiece.textContent;
-
-        // Poner la pieza arrastrada en destino
-        cell.innerHTML = "";
-        placePieceOnBoard(targetCellId, data.rank, data.label);
-
-        // Poner la pieza destino en origen
-        oldCell.innerHTML = "";
-        placePieceOnBoard(data.parentID, targetRank, targetLabel);
-      }
+    // Fuera de despliegue: mostramos algo (enemigo oculto)
+    if (piece.ownerId === LOCAL_PLAYER_ID) {
+      const label = def?.label ?? piece.rank;
+      const el = createPieceElement({ rank: piece.rank, label, draggable: false, dragPayload: null });
+      cell.appendChild(el);
+    } else {
+      const hidden = createPieceElement({ rank: piece.rank, label: "❓", draggable: false, dragPayload: null });
+      cell.appendChild(hidden);
     }
-  });
-}
-
-function placePieceOnBoard(cellId, rank, label) {
-  const cell = document.getElementById(cellId);
-  if (!cell) return;
-
-  const piece = createPieceElement(rank, label);
-  cell.appendChild(piece);
-
-  // Guardar en estado lógico
-  placedPieces[cellId] = { rank, label };
-}
-
-function removeFromInventory(index) {
-  // Buscamos por rank del ítem en ese índice
-  const rankToFind = inventoryState[index]?.rank;
-  if (!rankToFind) return;
-
-  const item = inventoryState.find((i) => i.rank === rankToFind);
-  if (item && item.count > 0) {
-    item.count--;
-    renderInventory();
   }
 }
 
-// ==========================================
-// 4. FUNCIONES DE BOTONES
-// ==========================================
+function renderInventory(state) {
+  if (!piecesContainer) return;
 
-function resetBoardLogic() {
-  if (!boardEl) return;
+  piecesContainer.innerHTML = "";
 
-  boardEl.innerHTML = "";
-  placedPieces = {};
-  // Restaurar inventario original
-  inventoryState = JSON.parse(JSON.stringify(ARMY_CONFIG));
-  initBoard(); // Reconstruir grid vacío
-}
+  const inv = state?.stratego?.inventory?.[LOCAL_PLAYER_ID] || {};
+  const interactive = canInteractDeployment(state);
 
-// --- ALEATORIO ---
-if (btnRandom) {
-  btnRandom.addEventListener("click", () => {
-    // 1. Limpiar tablero primero
-    resetBoardLogic();
+  for (const def of STRATEGO_ARMY_CONFIG) {
+    const count = Number(inv[def.rank] || 0);
+    if (count <= 0) continue;
 
-    // 2. Obtener todas las celdas válidas (filas 0-3)
-    const validCells = [];
-    for (let r = 0; r <= 3; r++) {
-      for (let c = 0; c < 10; c++) {
-        validCells.push(`cell-${r}-${c}`);
-      }
-    }
+    const group = document.createElement("div");
+    group.style.display = "flex";
+    group.style.flexDirection = "column";
+    group.style.alignItems = "center";
 
-    // 3. Barajar celdas
-    validCells.sort(() => Math.random() - 0.5);
-
-    // 4. Colocar piezas restantes
-    inventoryState.forEach((item) => {
-      while (item.count > 0) {
-        const cellId = validCells.pop();
-        if (!cellId) break;
-
-        placePieceOnBoard(cellId, item.rank, item.label);
-        item.count--;
-      }
+    const pieceEl = createPieceElement({
+      rank: def.rank,
+      label: def.label,
+      draggable: interactive,
+      dragPayload: { source: "inventory", rank: def.rank },
     });
 
-    renderInventory();
+    const countBadge = document.createElement("span");
+    countBadge.textContent = `x${count}`;
+    countBadge.style.fontSize = "10px";
+    countBadge.style.color = "#aaa";
+
+    group.appendChild(pieceEl);
+    group.appendChild(countBadge);
+    piecesContainer.appendChild(group);
+  }
+}
+
+function renderOverlay(state) {
+  if (!overlay) return;
+  const phase = state?.stratego?.phase;
+
+  if (phase === "HANDSHAKE") overlay.classList.remove("hidden");
+  else overlay.classList.add("hidden");
+}
+
+function renderAll(state) {
+  if (!boardEl) return;
+  renderOverlay(state);
+  renderBoard(state);
+  renderInventory(state);
+}
+
+// ===============================
+// Botones
+// ===============================
+if (btnRandom) {
+  btnRandom.addEventListener("click", () => {
+    const res = strategoRandomizeDeployment(LOCAL_PLAYER_ID);
+    if (!res.ok) alert(res.reason);
   });
 }
 
-// --- LIMPIAR ---
 if (btnClear) {
-  btnClear.addEventListener("click", resetBoardLogic);
+  btnClear.addEventListener("click", () => {
+    strategoClearDeployment(LOCAL_PLAYER_ID);
+  });
 }
 
-// --- GRIMORIO (LocalStorage) ---
 if (btnSave) {
   btnSave.addEventListener("click", () => {
-    localStorage.setItem("stratego_setup", JSON.stringify(placedPieces));
+    const data = strategoExportDeployment(LOCAL_PLAYER_ID);
+    localStorage.setItem("stratego_setup", JSON.stringify(data));
     alert("📜 Grimorio guardado en el archivo local.");
   });
 }
 
 if (btnLoad) {
   btnLoad.addEventListener("click", () => {
-    const saved = localStorage.getItem("stratego_setup");
-    if (!saved) {
+    const raw = localStorage.getItem("stratego_setup");
+    if (!raw) {
       alert("No tienes estrategias guardadas.");
       return;
     }
 
-    resetBoardLogic();
-    const savedData = JSON.parse(saved);
-
-    // Colocar piezas y reducir inventario
-    Object.keys(savedData).forEach((cellId) => {
-      const p = savedData[cellId];
-      placePieceOnBoard(cellId, p.rank, p.label);
-
-      // Restar del inventario lógico
-      const item = inventoryState.find((i) => i.rank === p.rank);
-      if (item) item.count--;
-    });
-
-    renderInventory();
-  });
-}
-
-// --- READY (HANDSHAKE) ---
-if (btnReady) {
-  btnReady.addEventListener("click", () => {
-    const totalLeft = inventoryState.reduce((sum, item) => sum + item.count, 0);
-
-    if (totalLeft > 0) {
-      alert(`¡General! Aún tiene ${totalLeft} tropas sin asignar. Despliegue todas las unidades.`);
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      alert("El grimorio guardado está corrupto.");
       return;
     }
 
-    // 🔗 ETAPA III — sincronización con el engine
-    if (window.onDeploymentReady) {
-      window.onDeploymentReady(getPlacedPieces());
+    // Backwards compat: si estaba guardado con {rank,label}
+    const normalized = {};
+    for (const [cid, obj] of Object.entries(data || {})) {
+      if (!obj) continue;
+      const rank = obj.rank;
+      if (rank) normalized[cid] = { rank };
     }
 
-    if (overlay) overlay.classList.remove("hidden");
-
-    setTimeout(() => {
-      alert("¡El enemigo está listo! Inicia la batalla.");
-    }, 3000);
+    const res = strategoImportDeployment(LOCAL_PLAYER_ID, normalized);
+    if (!res.ok) alert(res.reason);
   });
 }
-            
 
-// --- CHAT WAR ROOM (Simulado) ---
+if (btnReady) {
+  btnReady.addEventListener("click", () => {
+    const res = strategoSetReady(LOCAL_PLAYER_ID, { autoEnemy: true });
+    if (!res.ok) alert(res.reason);
+  });
+}
+
+// ===============================
+// Chat (simulado)
+// ===============================
 if (warChatForm && warChatMsgs && warChatInput) {
   warChatForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -341,22 +355,11 @@ if (warChatForm && warChatMsgs && warChatInput) {
   });
 }
 
-function escapeHtml(str) {
-  return str
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-// INICIAR (solo si existe el tablero en DOM)
-if (boardEl) initBoard();
-
-export function getPlacedPieces() {
-  return structuredClone(placedPieces);
-}
-
-export function clearPlacedPieces() {
-  placedPieces = {};
+// ===============================
+// Boot
+// ===============================
+if (boardEl) {
+  ensureBoardGrid();
+  subscribe((state) => renderAll(state));
+  renderAll(getState());
 }
