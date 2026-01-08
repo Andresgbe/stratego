@@ -37,11 +37,13 @@ export const gameState = {
 
   // ===== Stratego (despliegue/board) — Etapa III =====
   stratego: {
-    phase: "DEPLOYMENT", // DEPLOYMENT | HANDSHAKE | BATTLE | GAME_OVER
-    board: {}, // cellId -> { ownerId: number, rank: string }
-    inventory: {}, // playerId -> { rank: count }
-    ready: {}, // playerId -> boolean
+    phase: "DEPLOYMENT",
+    board: {},
+    inventory: {},
+    ready: {},
     winnerPlayerId: null,
+    turnOwnerId: 1,
+    lastCombat: null,
     ui: {
       selectedCell: null,
     },
@@ -71,6 +73,8 @@ export function resetStrategoState({ playerIds = [1, 2] } = {}) {
   gameState.stratego.board = {};
   gameState.stratego.winnerPlayerId = null;
   gameState.stratego.ui.selectedCell = null;
+  gameState.stratego.turnOwnerId = playerIds[0] ?? 1;
+  gameState.stratego.lastCombat = null;
 
   gameState.stratego.inventory = {};
   gameState.stratego.ready = {};

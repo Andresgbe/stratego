@@ -11,6 +11,8 @@ import {
   strategoExportDeployment,
   strategoImportDeployment,
   strategoSetReady,
+  strategoSelectCell,
+  strategoMove,
 } from "./gameEngine.js";
 
 // ===============================
@@ -106,6 +108,39 @@ function ensureBoardGrid() {
         e.preventDefault();
         cell.classList.remove("drag-over");
 
+      // =========================
+      // Etapa IV: Click-to-move en BATTLE
+      // =========================
+      cell.addEventListener("click", () => {
+        const state = getState();
+        if (state?.stratego?.phase !== "BATTLE") return;
+
+        // solo el jugador con turno puede interactuar
+        if (state?.stratego?.turnOwnerId !== LOCAL_PLAYER_ID) return;
+
+        const clickedCellId = cell.id;
+        const board = state?.stratego?.board || {};
+        const piece = board[clickedCellId];
+        const selected = state?.stratego?.ui?.selectedCell;
+
+        // Si clickeo mi propia pieza móvil => seleccionar
+        if (piece && piece.ownerId === LOCAL_PLAYER_ID) {
+          const res = strategoSelectCell(LOCAL_PLAYER_ID, clickedCellId);
+          if (!res.ok) alert(res.reason);
+          return;
+        }
+
+        // Si ya tengo selección => intento mover/atacar
+        if (selected) {
+          const res = strategoMove({
+            playerId: LOCAL_PLAYER_ID,
+            fromCellId: selected,
+            toCellId: clickedCellId,
+          });
+          if (!res.ok) alert(res.reason);
+        }
+      });
+
         const state = getState();
         if (!canInteractDeployment(state)) return;
         if (isWater(r, c) || !isLocalDeployZone(r)) return;
@@ -187,9 +222,10 @@ function renderBoard(state) {
   if (!boardEl) return;
   ensureBoardGrid();
 
-  // Limpiar piezas renderizadas (no tocamos clases)
+  // Limpiar piezas renderizadas + clases visuales dinámicas
   for (const cell of boardEl.querySelectorAll(".cell")) {
     cell.innerHTML = "";
+    cell.classList.remove("selected");
   }
 
   const phase = state?.stratego?.phase;
@@ -217,15 +253,32 @@ function renderBoard(state) {
       continue;
     }
 
-    // Fuera de despliegue: mostramos algo (enemigo oculto)
+    // Fuera de despliegue (HANDSHAKE/BATTLE/GAME_OVER): enemigo oculto
     if (piece.ownerId === LOCAL_PLAYER_ID) {
       const label = def?.label ?? piece.rank;
-      const el = createPieceElement({ rank: piece.rank, label, draggable: false, dragPayload: null });
+      const el = createPieceElement({
+        rank: piece.rank,
+        label,
+        draggable: false,
+        dragPayload: null,
+      });
       cell.appendChild(el);
     } else {
-      const hidden = createPieceElement({ rank: piece.rank, label: "❓", draggable: false, dragPayload: null });
+      const hidden = createPieceElement({
+        rank: piece.rank,
+        label: "❓",
+        draggable: false,
+        dragPayload: null,
+      });
       cell.appendChild(hidden);
     }
+  }
+
+  // Etapa IV: resaltar selección (click-to-move)
+  const selected = state?.stratego?.ui?.selectedCell;
+  if (selected) {
+    const el = document.getElementById(selected);
+    if (el) el.classList.add("selected");
   }
 }
 

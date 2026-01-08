@@ -440,10 +440,284 @@ export function strategoSetReady(playerId = 1, { autoEnemy = true } = {}) {
 
   _handshakeTimer = setTimeout(() => {
     if (gameState.stratego.phase !== "HANDSHAKE") return;
+
     gameState.stratego.phase = "BATTLE";
-    pushLog("system", "¡Batalla iniciada!", {});
+    gameState.stratego.turnOwnerId = 1;       // empieza P1 (puedes random luego)
+    gameState.stratego.lastCombat = null;
+    gameState.stratego.ui.selectedCell = null;
+
+    pushLog("system", "¡Batalla iniciada!", { turnOwnerId: gameState.stratego.turnOwnerId });
     notify();
   }, 3000);
+
+  notify();
+  return { ok: true };
+}
+
+// =========================================================
+// 3) Stratego — Etapa IV (BATTLE): movimiento + combate
+// =========================================================
+
+function getRankValue(rank) {
+  // Valores base para comparar (solo numéricos)
+  const n = Number(rank);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function isMovableRank(rank) {
+  return rank !== "B" && rank !== "F";
+}
+
+function isOrthogonalStep(a, b) {
+  const A = parseCellId(a);
+  const B = parseCellId(b);
+  if (!A || !B) return false;
+  const dr = Math.abs(A.r - B.r);
+  const dc = Math.abs(A.c - B.c);
+  return (dr + dc) === 1;
+}
+
+function isClearScoutPath(fromId, toId, board) {
+  const A = parseCellId(fromId);
+  const B = parseCellId(toId);
+  if (!A || !B) return false;
+
+  // Debe ser línea recta
+  const sameRow = A.r === B.r;
+  const sameCol = A.c === B.c;
+  if (!sameRow && !sameCol) return false;
+
+  const dr = sameRow ? 0 : (B.r > A.r ? 1 : -1);
+  const dc = sameCol ? 0 : (B.c > A.c ? 1 : -1);
+
+  let r = A.r + dr;
+  let c = A.c + dc;
+
+  // Recorremos hasta antes del destino (el destino puede tener enemigo)
+  while (!(r === B.r && c === B.c)) {
+    if (isWater(r, c)) return false;
+    const cid = cellId(r, c);
+    if (board[cid]) return false; // bloqueado por pieza
+    r += dr;
+    c += dc;
+  }
+
+  // El destino no puede ser agua
+  if (isWater(B.r, B.c)) return false;
+
+  return true;
+}
+
+function resolveCombat(attacker, defender) {
+  // retorna { outcome, attackerDies, defenderDies, special }
+  // outcome: "ATTACKER_WINS" | "DEFENDER_WINS" | "TIE"
+  const a = attacker.rank;
+  const d = defender.rank;
+
+  // Captura bandera
+  if (d === "F") {
+    return { outcome: "ATTACKER_WINS", attackerDies: false, defenderDies: true, special: "FLAG_CAPTURED" };
+  }
+
+  // Bombas: por regla Etapa IV (demo): "4" desactiva bombas
+  if (d === "B") {
+    if (a === "4") {
+      return { outcome: "ATTACKER_WINS", attackerDies: false, defenderDies: true, special: "BOMB_DEFUSED" };
+    }
+    return { outcome: "DEFENDER_WINS", attackerDies: true, defenderDies: false, special: "BOMB_EXPLODES" };
+  }
+
+  // Espía vs Mariscal SOLO si espía ataca
+  if (a === "S" && d === "10") {
+    return { outcome: "ATTACKER_WINS", attackerDies: false, defenderDies: true, special: "SPY_ASSASSINATES" };
+  }
+
+  // Espía normalmente es el más débil
+  if (a === "S" && d !== "10") {
+    return { outcome: "DEFENDER_WINS", attackerDies: true, defenderDies: false, special: "SPY_LOSES" };
+  }
+
+  const av = getRankValue(a);
+  const dv = getRankValue(d);
+
+  if (av > dv) return { outcome: "ATTACKER_WINS", attackerDies: false, defenderDies: true, special: null };
+  if (av < dv) return { outcome: "DEFENDER_WINS", attackerDies: true, defenderDies: false, special: null };
+  return { outcome: "TIE", attackerDies: true, defenderDies: true, special: "EQUAL_RANKS" };
+}
+
+function hasAnyLegalMove(playerId) {
+  const board = gameState.stratego.board;
+  for (const [fromId, piece] of Object.entries(board)) {
+    if (!piece || piece.ownerId !== playerId) continue;
+    if (!isMovableRank(piece.rank)) continue;
+
+    // Generar movimientos rápidos (sin lista completa)
+    // 1 paso
+    const A = parseCellId(fromId);
+    if (!A) continue;
+
+    const candidates = [
+      cellId(A.r - 1, A.c),
+      cellId(A.r + 1, A.c),
+      cellId(A.r, A.c - 1),
+      cellId(A.r, A.c + 1),
+    ];
+
+    // Explorador: también intentamos rayos hasta borde
+    if (piece.rank === "2") {
+      // arriba
+      for (let r = A.r - 1; r >= 0; r--) candidates.push(cellId(r, A.c));
+      // abajo
+      for (let r = A.r + 1; r < 10; r++) candidates.push(cellId(r, A.c));
+      // izq
+      for (let c = A.c - 1; c >= 0; c--) candidates.push(cellId(A.r, c));
+      // der
+      for (let c = A.c + 1; c < 10; c++) candidates.push(cellId(A.r, c));
+    }
+
+    for (const toId of candidates) {
+      const to = parseCellId(toId);
+      if (!to) continue;
+      if (to.r < 0 || to.r >= 10 || to.c < 0 || to.c >= 10) continue;
+      if (isWater(to.r, to.c)) continue;
+
+      const target = board[toId];
+      if (target && target.ownerId === playerId) continue;
+
+      if (piece.rank === "2") {
+        if (!isClearScoutPath(fromId, toId, board)) continue;
+        return true;
+      } else {
+        if (!isOrthogonalStep(fromId, toId)) continue;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function strategoSelectCell(playerId = 1, cellIdToSelect = null) {
+  if (gameState.stratego.phase !== "BATTLE") return { ok: false, reason: "No estás en combate" };
+  if (gameState.stratego.winnerPlayerId) return { ok: false, reason: "Partida terminada" };
+  if (gameState.stratego.turnOwnerId !== playerId) return { ok: false, reason: "No es tu turno" };
+
+  if (!cellIdToSelect) {
+    gameState.stratego.ui.selectedCell = null;
+    notify();
+    return { ok: true };
+  }
+
+  const piece = gameState.stratego.board[cellIdToSelect];
+  if (!piece) return { ok: false, reason: "No hay pieza ahí" };
+  if (piece.ownerId !== playerId) return { ok: false, reason: "Solo puedes seleccionar tus piezas" };
+  if (!isMovableRank(piece.rank)) return { ok: false, reason: "Esa pieza no se puede mover" };
+
+  gameState.stratego.ui.selectedCell = cellIdToSelect;
+  notify();
+  return { ok: true };
+}
+
+export function strategoMove({ playerId = 1, fromCellId, toCellId }) {
+  if (gameState.stratego.phase !== "BATTLE") return { ok: false, reason: "No estás en combate" };
+  if (gameState.stratego.winnerPlayerId) return { ok: false, reason: "Partida terminada" };
+  if (gameState.stratego.turnOwnerId !== playerId) return { ok: false, reason: "No es tu turno" };
+
+  const from = parseCellId(fromCellId);
+  const to = parseCellId(toCellId);
+  if (!from || !to) return { ok: false, reason: "Celda inválida" };
+  if (to.r < 0 || to.r >= 10 || to.c < 0 || to.c >= 10) return { ok: false, reason: "Fuera del tablero" };
+  if (isWater(to.r, to.c)) return { ok: false, reason: "No puedes ir al lago" };
+
+  const board = gameState.stratego.board;
+  const moving = board[fromCellId];
+  if (!moving) return { ok: false, reason: "No hay pieza en el origen" };
+  if (moving.ownerId !== playerId) return { ok: false, reason: "Solo puedes mover tus piezas" };
+  if (!isMovableRank(moving.rank)) return { ok: false, reason: "Esa pieza no se puede mover" };
+
+  const target = board[toCellId];
+  if (target && target.ownerId === playerId) return { ok: false, reason: "Destino ocupado por tu pieza" };
+
+  // Validación de movimiento
+  if (moving.rank === "2") {
+    if (!isClearScoutPath(fromCellId, toCellId, board))
+      return { ok: false, reason: "Movimiento inválido (Explorador requiere camino libre en línea recta)" };
+  } else {
+    if (!isOrthogonalStep(fromCellId, toCellId))
+      return { ok: false, reason: "Movimiento inválido (solo 1 casilla ortogonal)" };
+  }
+
+  // Movimiento simple
+  if (!target) {
+    delete board[fromCellId];
+    board[toCellId] = moving;
+
+    gameState.stratego.ui.selectedCell = null;
+
+    // Cambiar turno
+    const next = gameState.jugadores.find((j) => j.id !== playerId)?.id ?? (playerId === 1 ? 2 : 1);
+    gameState.stratego.turnOwnerId = next;
+
+    // Victoria por no-moves
+    if (!hasAnyLegalMove(next)) {
+      gameState.stratego.winnerPlayerId = playerId;
+      gameState.stratego.phase = "GAME_OVER";
+      pushLog("system", "Victoria: el rival no tiene movimientos", { winnerPlayerId: playerId });
+    }
+
+    notify();
+    return { ok: true };
+  }
+
+  // Combate
+  const result = resolveCombat(moving, target);
+
+  gameState.stratego.lastCombat = {
+    fromCellId,
+    toCellId,
+    attacker: { ownerId: moving.ownerId, rank: moving.rank },
+    defender: { ownerId: target.ownerId, rank: target.rank },
+    outcome: result.outcome,
+    special: result.special,
+  };
+
+  pushLog("action", "Combate", gameState.stratego.lastCombat);
+
+  // Aplicar outcome
+  if (result.outcome === "ATTACKER_WINS") {
+    delete board[fromCellId];
+    delete board[toCellId];
+    board[toCellId] = moving; // ocupa la celda
+  } else if (result.outcome === "DEFENDER_WINS") {
+    delete board[fromCellId]; // atacante muere
+    // defensor queda
+  } else {
+    // tie
+    delete board[fromCellId];
+    delete board[toCellId];
+  }
+
+  // Flag capturada
+  if (result.special === "FLAG_CAPTURED") {
+    gameState.stratego.winnerPlayerId = playerId;
+    gameState.stratego.phase = "GAME_OVER";
+    pushLog("system", "¡Bandera capturada! Fin de la partida.", { winnerPlayerId: playerId });
+    gameState.stratego.ui.selectedCell = null;
+    notify();
+    return { ok: true };
+  }
+
+  gameState.stratego.ui.selectedCell = null;
+
+  // Cambiar turno
+  const next = gameState.jugadores.find((j) => j.id !== playerId)?.id ?? (playerId === 1 ? 2 : 1);
+  gameState.stratego.turnOwnerId = next;
+
+  // Victoria por no-moves
+  if (!hasAnyLegalMove(next)) {
+    gameState.stratego.winnerPlayerId = playerId;
+    gameState.stratego.phase = "GAME_OVER";
+    pushLog("system", "Victoria: el rival no tiene movimientos", { winnerPlayerId: playerId });
+  }
 
   notify();
   return { ok: true };
