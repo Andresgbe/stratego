@@ -303,6 +303,37 @@ function renderBoard(state) {
       if (t) t.classList.add("valid-move");
     }
   }
+
+    // Stage IV: Mission Report (GAME_OVER)
+  const over = state?.stratego?.phase === "GAME_OVER";
+  const winner = state?.stratego?.winnerPlayerId;
+
+  let report = document.getElementById("mission-report");
+  if (!report) {
+    report = document.createElement("div");
+    report.id = "mission-report";
+    report.className = "mission-report hidden";
+    report.innerHTML = `
+      <div class="mission-report__card">
+        <h2>Informe de Misión</h2>
+        <p id="mission-report-text"></p>
+        <button id="mission-report-exit" type="button">Volver al Club</button>
+      </div>
+    `;
+    document.body.appendChild(report);
+
+    report.querySelector("#mission-report-exit").addEventListener("click", () => {
+      window.location.reload();
+    });
+  }
+
+  if (over) {
+    const txt = report.querySelector("#mission-report-text");
+    txt.textContent = winner ? `Victoria del Jugador ${winner}` : "Fin de la partida";
+    report.classList.remove("hidden");
+  } else {
+    report.classList.add("hidden");
+  }
 }
 
 function renderInventory(state) {

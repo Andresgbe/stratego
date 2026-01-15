@@ -276,3 +276,37 @@
 .hidden {
     display: none !important;
 }
+
+.mission-report {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.55);
+  z-index: 9999;
+}
+
+.mission-report.hidden {
+  display: none;
+}
+
+.mission-report__card {
+  width: min(420px, 90vw);
+  padding: 16px;
+  border-radius: 12px;
+  background: #0f1f1a;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.mission-report__card h2 {
+  margin: 0 0 8px 0;
+}
+
+.mission-report__card button {
+  margin-top: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+}

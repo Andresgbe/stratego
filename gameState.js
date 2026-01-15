@@ -43,6 +43,8 @@ export const gameState = {
     ready: {},
     winnerPlayerId: null,
     turnOwnerId: 1,
+    winnerPlayerId: null,
+    gameOverReason: null,
     pveAuto: false,
     lastCombat: null,
     ui: {
