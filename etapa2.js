@@ -11,6 +11,7 @@ import {
   strategoSetReady,
   strategoSelectCell,
   strategoMove,
+  strategoGetLegalTargets,
 } from "./gameEngine.js";
 
 // ===============================
@@ -162,14 +163,25 @@ function ensureBoardGrid() {
         const selected = state?.stratego?.ui?.selectedCell;
 
         // Si clickeo mi propia pieza móvil => seleccionar
+        // Si clickeo mi propia pieza => seleccionar (toggle)
         if (piece && piece.ownerId === LOCAL_PLAYER_ID) {
+          if (selected === clickedCellId) {
+            const res = strategoSelectCell(LOCAL_PLAYER_ID, null);
+            if (!res.ok) alert(res.reason);
+            return;
+          }
+
           const res = strategoSelectCell(LOCAL_PLAYER_ID, clickedCellId);
           if (!res.ok) alert(res.reason);
           return;
         }
 
         // Si ya tengo selección => intento mover/atacar
+        // Si ya tengo selección => intento mover/atacar (solo si es destino legal)
         if (selected) {
+          const targets = strategoGetLegalTargets(LOCAL_PLAYER_ID, selected);
+          if (!targets.includes(clickedCellId)) return;
+
           const res = strategoMove({
             playerId: LOCAL_PLAYER_ID,
             fromCellId: selected,
@@ -230,6 +242,7 @@ function renderBoard(state) {
   for (const cell of boardEl.querySelectorAll(".cell")) {
     cell.innerHTML = "";
     cell.classList.remove("selected");
+    cell.classList.remove("valid-move");
   }
 
   const phase = state?.stratego?.phase;
@@ -278,11 +291,17 @@ function renderBoard(state) {
     }
   }
 
-  // Etapa IV: resaltar selección (click-to-move)
+  // Etapa IV: resaltar selección (click-to-move) + destinos válidos
   const selected = state?.stratego?.ui?.selectedCell;
   if (selected) {
     const el = document.getElementById(selected);
     if (el) el.classList.add("selected");
+
+    const targets = strategoGetLegalTargets(LOCAL_PLAYER_ID, selected);
+    for (const cid of targets) {
+      const t = document.getElementById(cid);
+      if (t) t.classList.add("valid-move");
+    }
   }
 }
 

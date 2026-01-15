@@ -695,6 +695,58 @@ function maybeAutoEnemyTurn() {
   }, 350);
 }
 
+export function strategoGetLegalTargets(playerId = 1, fromCellId) {
+  if (gameState.stratego.phase !== "BATTLE") return [];
+  if (gameState.stratego.winnerPlayerId) return [];
+  if (gameState.stratego.turnOwnerId !== playerId) return [];
+
+  const board = gameState.stratego.board || {};
+  const piece = board[fromCellId];
+  if (!piece) return [];
+  if (piece.ownerId !== playerId) return [];
+  if (!isMovableRank(piece.rank)) return [];
+
+  const A = parseCellId(fromCellId);
+  if (!A) return [];
+
+  const targets = [];
+
+  const pushIfOk = (toId) => {
+    const to = parseCellId(toId);
+    if (!to) return;
+    if (to.r < 0 || to.r >= 10 || to.c < 0 || to.c >= 10) return;
+    if (isWater(to.r, to.c)) return;
+
+    const target = board[toId];
+    if (target && target.ownerId === playerId) return;
+
+    // Validación por tipo de pieza
+    if (piece.rank === "2") {
+      if (!isClearScoutPath(fromCellId, toId, board)) return;
+    } else {
+      if (!isOrthogonalStep(fromCellId, toId)) return;
+    }
+
+    targets.push(toId);
+  };
+
+  if (piece.rank === "2") {
+    // Explorador: rayos
+    for (let r = A.r - 1; r >= 0; r--) pushIfOk(cellId(r, A.c));
+    for (let r = A.r + 1; r < 10; r++) pushIfOk(cellId(r, A.c));
+    for (let c = A.c - 1; c >= 0; c--) pushIfOk(cellId(A.r, c));
+    for (let c = A.c + 1; c < 10; c++) pushIfOk(cellId(A.r, c));
+  } else {
+    // 1 paso ortogonal
+    pushIfOk(cellId(A.r - 1, A.c));
+    pushIfOk(cellId(A.r + 1, A.c));
+    pushIfOk(cellId(A.r, A.c - 1));
+    pushIfOk(cellId(A.r, A.c + 1));
+  }
+
+  return targets;
+}
+
 export function strategoSelectCell(playerId = 1, cellIdToSelect = null) {
   if (gameState.stratego.phase !== "BATTLE") return { ok: false, reason: "No estás en combate" };
   if (gameState.stratego.winnerPlayerId) return { ok: false, reason: "Partida terminada" };
