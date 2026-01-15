@@ -1,6 +1,4 @@
-import {
-  STRATEGO_ARMY_CONFIG,
-} from "./gameState.js";
+import { STRATEGO_ARMY_CONFIG } from "./gameState.js";
 import {
   getState,
   subscribe,
@@ -21,7 +19,7 @@ import {
 const LOCAL_PLAYER_ID = 1; // demo (luego lo conectas a login/rol)
 
 function isWater(r, c) {
-  return (r === 4 || r === 5) && ((c === 2 || c === 3) || (c === 6 || c === 7));
+  return (r === 4 || r === 5) && (c === 2 || c === 3 || c === 6 || c === 7);
 }
 
 function isLocalDeployZone(r) {
@@ -44,7 +42,11 @@ function rankToDef(rank) {
 
 function canInteractDeployment(state) {
   // Regla Etapa III: Drag&Drop solo permitido durante DEPLOYMENT
-  return state?.fase === "planificacion" && state?.stratego?.phase === "DEPLOYMENT";
+  return (
+    state?.fase === "planificacion" &&
+    state?.stratego?.phase === "DEPLOYMENT" &&
+    !state?.stratego?.ready?.[LOCAL_PLAYER_ID]
+  );
 }
 
 // ===============================
@@ -108,39 +110,9 @@ function ensureBoardGrid() {
         e.preventDefault();
         cell.classList.remove("drag-over");
 
-      // =========================
-      // Etapa IV: Click-to-move en BATTLE
-      // =========================
-      cell.addEventListener("click", () => {
-        const state = getState();
-        if (state?.stratego?.phase !== "BATTLE") return;
-
-        // solo el jugador con turno puede interactuar
-        if (state?.stratego?.turnOwnerId !== LOCAL_PLAYER_ID) return;
-
-        const clickedCellId = cell.id;
-        const board = state?.stratego?.board || {};
-        const piece = board[clickedCellId];
-        const selected = state?.stratego?.ui?.selectedCell;
-
-        // Si clickeo mi propia pieza móvil => seleccionar
-        if (piece && piece.ownerId === LOCAL_PLAYER_ID) {
-          const res = strategoSelectCell(LOCAL_PLAYER_ID, clickedCellId);
-          if (!res.ok) alert(res.reason);
-          return;
-        }
-
-        // Si ya tengo selección => intento mover/atacar
-        if (selected) {
-          const res = strategoMove({
-            playerId: LOCAL_PLAYER_ID,
-            fromCellId: selected,
-            toCellId: clickedCellId,
-          });
-          if (!res.ok) alert(res.reason);
-        }
-      });
-
+        // =========================
+        // Etapa IV: Click-to-move en BATTLE
+        // =========================
         const state = getState();
         if (!canInteractDeployment(state)) return;
         if (isWater(r, c) || !isLocalDeployZone(r)) return;
@@ -172,6 +144,36 @@ function ensureBoardGrid() {
             playerId: LOCAL_PLAYER_ID,
             fromCellId: payload.fromCellId,
             toCellId: targetCellId,
+          });
+          if (!res.ok) alert(res.reason);
+        }
+      });
+
+      cell.addEventListener("click", () => {
+        const state = getState();
+        if (state?.stratego?.phase !== "BATTLE") return;
+
+        // solo el jugador con turno puede interactuar
+        if (state?.stratego?.turnOwnerId !== LOCAL_PLAYER_ID) return;
+
+        const clickedCellId = cell.id;
+        const board = state?.stratego?.board || {};
+        const piece = board[clickedCellId];
+        const selected = state?.stratego?.ui?.selectedCell;
+
+        // Si clickeo mi propia pieza móvil => seleccionar
+        if (piece && piece.ownerId === LOCAL_PLAYER_ID) {
+          const res = strategoSelectCell(LOCAL_PLAYER_ID, clickedCellId);
+          if (!res.ok) alert(res.reason);
+          return;
+        }
+
+        // Si ya tengo selección => intento mover/atacar
+        if (selected) {
+          const res = strategoMove({
+            playerId: LOCAL_PLAYER_ID,
+            fromCellId: selected,
+            toCellId: clickedCellId,
           });
           if (!res.ok) alert(res.reason);
         }
@@ -211,7 +213,9 @@ function createPieceElement({ rank, label, draggable, dragPayload }) {
     div.addEventListener("dragend", () => {
       div.style.opacity = "1";
       _dragSource = null;
-      document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+      document
+        .querySelectorAll(".drag-over")
+        .forEach((el) => el.classList.remove("drag-over"));
     });
   }
 
@@ -402,7 +406,9 @@ if (warChatForm && warChatMsgs && warChatInput) {
     const text = warChatInput.value.trim();
     if (!text) return;
 
-    warChatMsgs.innerHTML += `<div class="msg" style="color: #4caf50;"><strong>Tú:</strong> ${escapeHtml(text)}</div>`;
+    warChatMsgs.innerHTML += `<div class="msg" style="color: #4caf50;"><strong>Tú:</strong> ${escapeHtml(
+      text
+    )}</div>`;
     warChatInput.value = "";
     warChatMsgs.scrollTop = warChatMsgs.scrollHeight;
   });

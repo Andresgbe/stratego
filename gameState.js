@@ -43,6 +43,7 @@ export const gameState = {
     ready: {},
     winnerPlayerId: null,
     turnOwnerId: 1,
+    pveAuto: false,
     lastCombat: null,
     ui: {
       selectedCell: null,

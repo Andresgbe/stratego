@@ -252,9 +252,14 @@ export function strategoClearDeployment(playerId = 1) {
   gameState.stratego.ready[playerId] = false;
 
   // si estabas en handshake, vuelve a deployment
+  // IMPORTANTE: no fuerces cambio de fase.
+  // "Limpiar" solo debe tener sentido en DEPLOYMENT.
+  // En HANDSHAKE/BATTLE no debe tumbar la fase del juego.
   if (gameState.stratego.phase !== "DEPLOYMENT") {
-    gameState.stratego.phase = "DEPLOYMENT";
+    notify();
+    return;
   }
+
 
   notify();
 }
@@ -404,8 +409,8 @@ export function strategoImportDeployment(playerId = 1, data = {}) {
 let _handshakeTimer = null;
 
 export function strategoSetReady(playerId = 1, { autoEnemy = true } = {}) {
-  if (gameState.stratego.phase !== "DEPLOYMENT") {
-    return { ok: false, reason: "Solo puedes dar listo en despliegue" };
+  if (gameState.stratego.phase !== 'DEPLOYMENT') {
+    return { ok: false, reason: 'Solo puedes dar listo en despliegue' };
   }
 
   const left = strategoCountInventoryLeft(playerId);
@@ -414,24 +419,39 @@ export function strategoSetReady(playerId = 1, { autoEnemy = true } = {}) {
   }
 
   gameState.stratego.ready[playerId] = true;
+  gameState.stratego.pveAuto = Boolean(autoEnemy);
 
   // PvE demo: auto despliega enemigo
   if (autoEnemy) {
     const enemyId = playerId === 1 ? 2 : 1;
+
     if (!gameState.stratego.ready[enemyId]) {
       if (!gameState.stratego.inventory[enemyId]) {
         gameState.stratego.inventory[enemyId] = makeDefaultStrategoInventory();
       }
+
       const prevPhase = gameState.stratego.phase;
-      gameState.stratego.phase = "DEPLOYMENT";
+      gameState.stratego.phase = 'DEPLOYMENT';
       strategoRandomizeDeployment(enemyId);
       gameState.stratego.phase = prevPhase;
+
       gameState.stratego.ready[enemyId] = true;
     }
   }
 
-  gameState.stratego.phase = "HANDSHAKE";
-  pushLog("system", "Formación bloqueada: handshake iniciado", { playerId });
+  // ✅ Solo iniciamos handshake cuando ambos están listos
+  const allReady = Object.values(gameState.stratego.ready || {}).every(Boolean);
+
+  if (!allReady) {
+    pushLog('system', 'Listo recibido. Esperando al rival...', { playerId });
+    notify();
+    return { ok: true };
+  }
+
+  gameState.stratego.phase = 'HANDSHAKE';
+  pushLog('system', 'Formaciones confirmadas: handshake iniciado', {
+    ready: gameState.stratego.ready,
+  });
 
   if (_handshakeTimer) {
     clearTimeout(_handshakeTimer);
@@ -439,15 +459,18 @@ export function strategoSetReady(playerId = 1, { autoEnemy = true } = {}) {
   }
 
   _handshakeTimer = setTimeout(() => {
-    if (gameState.stratego.phase !== "HANDSHAKE") return;
+    if (gameState.stratego.phase !== 'HANDSHAKE') return;
 
-    gameState.stratego.phase = "BATTLE";
-    gameState.stratego.turnOwnerId = 1;       // empieza P1 (puedes random luego)
+    gameState.stratego.phase = 'BATTLE';
+
+    // En Stratego clásico inicia el equipo del retador (aquí: player 1)
+    gameState.stratego.turnOwnerId = 1;
     gameState.stratego.lastCombat = null;
     gameState.stratego.ui.selectedCell = null;
 
-    pushLog("system", "¡Batalla iniciada!", { turnOwnerId: gameState.stratego.turnOwnerId });
+    pushLog('system', '¡Batalla iniciada!', { turnOwnerId: gameState.stratego.turnOwnerId });
     notify();
+    maybeAutoEnemyTurn();
   }, 3000);
 
   notify();
@@ -596,6 +619,82 @@ function hasAnyLegalMove(playerId) {
   return false;
 }
 
+function listLegalMovesForPlayer(playerId) {
+  const board = gameState.stratego.board;
+  const moves = [];
+
+  for (const [fromId, piece] of Object.entries(board)) {
+    if (!piece || piece.ownerId !== playerId) continue;
+    if (!isMovableRank(piece.rank)) continue;
+
+    const A = parseCellId(fromId);
+    if (!A) continue;
+
+    const pushIfOk = (toId) => {
+      const to = parseCellId(toId);
+      if (!to) return;
+      if (to.r < 0 || to.r >= 10 || to.c < 0 || to.c >= 10) return;
+      if (isWater(to.r, to.c)) return;
+
+      const target = board[toId];
+      if (target && target.ownerId === playerId) return;
+
+      // Validación por tipo de pieza
+      if (piece.rank === "2") {
+        if (!isClearScoutPath(fromId, toId, board)) return;
+      } else {
+        if (!isOrthogonalStep(fromId, toId)) return;
+      }
+
+      moves.push({ fromCellId: fromId, toCellId: toId });
+    };
+
+    // Movimientos
+    if (piece.rank === "2") {
+      // explorador: rayos
+      for (let r = A.r - 1; r >= 0; r--) pushIfOk(cellId(r, A.c));
+      for (let r = A.r + 1; r < 10; r++) pushIfOk(cellId(r, A.c));
+      for (let c = A.c - 1; c >= 0; c--) pushIfOk(cellId(A.r, c));
+      for (let c = A.c + 1; c < 10; c++) pushIfOk(cellId(A.r, c));
+    } else {
+      // 1 paso ortogonal
+      pushIfOk(cellId(A.r - 1, A.c));
+      pushIfOk(cellId(A.r + 1, A.c));
+      pushIfOk(cellId(A.r, A.c - 1));
+      pushIfOk(cellId(A.r, A.c + 1));
+    }
+  }
+
+  return moves;
+}
+
+function maybeAutoEnemyTurn() {
+  if (gameState.stratego.phase !== "BATTLE") return;
+  if (!gameState.stratego.pveAuto) return;
+
+  const enemyId = 2; // demo: P1 humano, P2 autómata
+  if (gameState.stratego.turnOwnerId !== enemyId) return;
+  if (gameState.stratego.winnerPlayerId) return;
+
+  const moves = listLegalMovesForPlayer(enemyId);
+  if (moves.length === 0) {
+    // si no puede mover, gana el rival
+    gameState.stratego.winnerPlayerId = 1;
+    gameState.stratego.phase = "GAME_OVER";
+    pushLog("system", "Victoria: el autómata no tiene movimientos", { winnerPlayerId: 1 });
+    notify();
+    return;
+  }
+
+  const pick = moves[Math.floor(Math.random() * moves.length)];
+
+  // Pequeño delay para que se “sienta” como turno enemigo
+  setTimeout(() => {
+    // Ojo: llamamos a strategoMove, que ya maneja combate + cambio de turno.
+    strategoMove({ playerId: enemyId, ...pick });
+  }, 350);
+}
+
 export function strategoSelectCell(playerId = 1, cellIdToSelect = null) {
   if (gameState.stratego.phase !== "BATTLE") return { ok: false, reason: "No estás en combate" };
   if (gameState.stratego.winnerPlayerId) return { ok: false, reason: "Partida terminada" };
@@ -656,6 +755,8 @@ export function strategoMove({ playerId = 1, fromCellId, toCellId }) {
     // Cambiar turno
     const next = gameState.jugadores.find((j) => j.id !== playerId)?.id ?? (playerId === 1 ? 2 : 1);
     gameState.stratego.turnOwnerId = next;
+    gameState.turno += 1;
+    maybeAutoEnemyTurn();
 
     // Victoria por no-moves
     if (!hasAnyLegalMove(next)) {
@@ -710,7 +811,9 @@ export function strategoMove({ playerId = 1, fromCellId, toCellId }) {
 
   // Cambiar turno
   const next = gameState.jugadores.find((j) => j.id !== playerId)?.id ?? (playerId === 1 ? 2 : 1);
-  gameState.stratego.turnOwnerId = next;
+    gameState.stratego.turnOwnerId = next;
+    gameState.turno += 1;
+    maybeAutoEnemyTurn();
 
   // Victoria por no-moves
   if (!hasAnyLegalMove(next)) {
