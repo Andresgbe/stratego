@@ -478,6 +478,34 @@ export function strategoSetReady(playerId = 1, { autoEnemy = true } = {}) {
 }
 
 // =========================================================
+// 2.1) PvP hook — iniciar batalla desde evento del servidor
+// =========================================================
+
+export function strategoStartBattleFromServer({ turnOwnerId = 1 } = {}) {
+  // El servidor es la autoridad de inicio en PvP.
+  // Aquí solo aplicamos el evento de forma determinística.
+
+  if (_handshakeTimer) {
+    clearTimeout(_handshakeTimer);
+    _handshakeTimer = null;
+  }
+
+  gameState.stratego.pveAuto = false;
+  gameState.stratego.phase = "BATTLE";
+  gameState.stratego.turnOwnerId = Number(turnOwnerId) || 1;
+  gameState.stratego.lastCombat = null;
+  gameState.stratego.ui.selectedCell = null;
+
+  pushLog("system", "¡Batalla iniciada! (servidor)", {
+    turnOwnerId: gameState.stratego.turnOwnerId,
+  });
+
+  notify();
+  return { ok: true };
+}
+
+
+// =========================================================
 // 3) Stratego — Etapa IV (BATTLE): movimiento + combate
 // =========================================================
 
@@ -681,6 +709,7 @@ function maybeAutoEnemyTurn() {
     // si no puede mover, gana el rival
     gameState.stratego.winnerPlayerId = 1;
     gameState.stratego.phase = "GAME_OVER";
+    gameState.stratego.gameOverReason = "FLAG_CAPTURED";
     pushLog("system", "Victoria: el autómata no tiene movimientos", { winnerPlayerId: 1 });
     notify();
     return;
@@ -814,6 +843,7 @@ export function strategoMove({ playerId = 1, fromCellId, toCellId }) {
     if (!hasAnyLegalMove(next)) {
       gameState.stratego.winnerPlayerId = playerId;
       gameState.stratego.phase = "GAME_OVER";
+      gameState.stratego.gameOverReason = "FLAG_CAPTURED";
       pushLog("system", "Victoria: el rival no tiene movimientos", { winnerPlayerId: playerId });
     }
 
@@ -871,6 +901,7 @@ export function strategoMove({ playerId = 1, fromCellId, toCellId }) {
   if (!hasAnyLegalMove(next)) {
     gameState.stratego.winnerPlayerId = playerId;
     gameState.stratego.phase = "GAME_OVER";
+    gameState.stratego.gameOverReason = "FLAG_CAPTURED";
     pushLog("system", "Victoria: el rival no tiene movimientos", { winnerPlayerId: playerId });
   }
 
@@ -880,5 +911,35 @@ export function strategoMove({ playerId = 1, fromCellId, toCellId }) {
 
 export function strategoResetAll({ playerIds = [1, 2] } = {}) {
   resetStrategoState({ playerIds });
+  notify();
+}
+
+export function strategoSurrender(playerId = 1) {
+  if (gameState.stratego.phase !== "BATTLE" && gameState.stratego.phase !== "HANDSHAKE") {
+    return { ok: false, reason: "Solo puedes rendirte durante la partida" };
+  }
+  if (gameState.stratego.winnerPlayerId) return { ok: false, reason: "Partida ya terminada" };
+
+  const winner = playerId === 1 ? 2 : 1;
+
+  gameState.stratego.winnerPlayerId = winner;
+  gameState.stratego.phase = "GAME_OVER";
+  gameState.stratego.gameOverReason = "SURRENDER";
+  gameState.stratego.ui.selectedCell = null;
+
+  pushLog("system", "Retirada confirmada. Fin de la partida.", {
+    surrenderedBy: playerId,
+    winnerPlayerId: winner,
+  });
+
+  notify();
+  return { ok: true };
+}
+
+function endGame(winnerPlayerId, reason, logMessage) {
+  gameState.stratego.winnerPlayerId = winnerPlayerId;
+  gameState.stratego.phase = "GAME_OVER";
+  gameState.stratego.gameOverReason = reason;
+  pushLog("system", logMessage, { winnerPlayerId });
   notify();
 }

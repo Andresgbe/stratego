@@ -12,6 +12,7 @@ import {
   strategoSelectCell,
   strategoMove,
   strategoGetLegalTargets,
+  strategoResetAll,
 } from "./gameEngine.js";
 
 // ===============================
@@ -42,7 +43,8 @@ function rankToDef(rank) {
 }
 
 function canInteractDeployment(state) {
-  // Regla Etapa III: Drag&Drop solo permitido durante DEPLOYMENT
+  // Drag&Drop solo permitido durante DEPLOYMENT
+  // y se bloquea si el jugador ya dio LISTO
   return (
     state?.fase === "planificacion" &&
     state?.stratego?.phase === "DEPLOYMENT" &&
@@ -50,15 +52,18 @@ function canInteractDeployment(state) {
   );
 }
 
+
 // ===============================
 // DOM refs
 // ===============================
 const boardEl = document.getElementById("game-board");
 const piecesContainer = document.getElementById("pieces-container");
+const devPanelEl = document.querySelector(".warroom-devpanel");
 
 const btnRandom = document.getElementById("btn-randomize");
 const btnClear = document.getElementById("btn-clear-board");
 const btnReady = document.getElementById("btn-ready-war");
+const btnSurrender = document.getElementById("btn-surrender");
 const btnSave = document.getElementById("btn-save-strat");
 const btnLoad = document.getElementById("btn-load-strat");
 const overlay = document.getElementById("waiting-overlay");
@@ -135,7 +140,7 @@ function ensureBoardGrid() {
             rank: payload.rank,
             targetCellId,
           });
-          if (!res.ok) alert(res.reason);
+          if (!res.ok) console.warn(res.reason);
           return;
         }
 
@@ -146,7 +151,7 @@ function ensureBoardGrid() {
             fromCellId: payload.fromCellId,
             toCellId: targetCellId,
           });
-          if (!res.ok) alert(res.reason);
+          if (!res.ok) console.warn(res.reason);
         }
       });
 
@@ -167,12 +172,12 @@ function ensureBoardGrid() {
         if (piece && piece.ownerId === LOCAL_PLAYER_ID) {
           if (selected === clickedCellId) {
             const res = strategoSelectCell(LOCAL_PLAYER_ID, null);
-            if (!res.ok) alert(res.reason);
+            if (!res.ok) console.warn(res.reason);
             return;
           }
 
           const res = strategoSelectCell(LOCAL_PLAYER_ID, clickedCellId);
-          if (!res.ok) alert(res.reason);
+          if (!res.ok) console.warn(res.reason);
           return;
         }
 
@@ -187,7 +192,7 @@ function ensureBoardGrid() {
             fromCellId: selected,
             toCellId: clickedCellId,
           });
-          if (!res.ok) alert(res.reason);
+          if (!res.ok) console.warn(res.reason);
         }
       });
 
@@ -281,13 +286,16 @@ function renderBoard(state) {
       });
       cell.appendChild(el);
     } else {
-      const hidden = createPieceElement({
+      const reveal = phase === "GAME_OVER";
+      const label = reveal ? (def?.label ?? piece.rank) : "❓";
+
+      const el = createPieceElement({
         rank: piece.rank,
-        label: "❓",
+        label,
         draggable: false,
         dragPayload: null,
       });
-      cell.appendChild(hidden);
+      cell.appendChild(el);
     }
   }
 
@@ -329,7 +337,17 @@ function renderBoard(state) {
 
   if (over) {
     const txt = report.querySelector("#mission-report-text");
-    txt.textContent = winner ? `Victoria del Jugador ${winner}` : "Fin de la partida";
+    const reason = state?.stratego?.gameOverReason;
+
+    let reasonText = "";
+    if (reason === "FLAG_CAPTURED") reasonText = " (Bandera capturada)";
+    else if (reason === "NO_MOVES") reasonText = " (El rival quedó sin movimientos)";
+    else if (reason === "SURRENDER") reasonText = " (Retirada confirmada)";
+
+    txt.textContent = winner
+      ? `Victoria del Jugador ${winner}${reasonText}`
+      : `Fin de la partida${reasonText}`;
+
     report.classList.remove("hidden");
   } else {
     report.classList.add("hidden");
@@ -381,6 +399,13 @@ function renderOverlay(state) {
 
 function renderAll(state) {
   if (!boardEl) return;
+
+  // Ocultar Dev Panel en GAME_OVER (evita “debug” en entrega)
+  if (devPanelEl) {
+    const hideDev = state?.stratego?.phase === "GAME_OVER";
+    devPanelEl.classList.toggle("hidden", hideDev);
+  }
+
   renderOverlay(state);
   renderBoard(state);
   renderInventory(state);
@@ -392,7 +417,7 @@ function renderAll(state) {
 if (btnRandom) {
   btnRandom.addEventListener("click", () => {
     const res = strategoRandomizeDeployment(LOCAL_PLAYER_ID);
-    if (!res.ok) alert(res.reason);
+    if (!res.ok) console.warn(res.reason);
   });
 }
 
@@ -406,7 +431,7 @@ if (btnSave) {
   btnSave.addEventListener("click", () => {
     const data = strategoExportDeployment(LOCAL_PLAYER_ID);
     localStorage.setItem("stratego_setup", JSON.stringify(data));
-    alert("📜 Grimorio guardado en el archivo local.");
+    console.warn("📜 Grimorio guardado en el archivo local.");
   });
 }
 
@@ -414,7 +439,7 @@ if (btnLoad) {
   btnLoad.addEventListener("click", () => {
     const raw = localStorage.getItem("stratego_setup");
     if (!raw) {
-      alert("No tienes estrategias guardadas.");
+      console.warn("No tienes estrategias guardadas.");
       return;
     }
 
@@ -422,7 +447,7 @@ if (btnLoad) {
     try {
       data = JSON.parse(raw);
     } catch {
-      alert("El grimorio guardado está corrupto.");
+      console.warn("El grimorio guardado está corrupto.");
       return;
     }
 
@@ -435,15 +460,23 @@ if (btnLoad) {
     }
 
     const res = strategoImportDeployment(LOCAL_PLAYER_ID, normalized);
-    if (!res.ok) alert(res.reason);
+    if (!res.ok) console.warn(res.reason);
   });
 }
 
 if (btnReady) {
   btnReady.addEventListener("click", () => {
     const res = strategoSetReady(LOCAL_PLAYER_ID, { autoEnemy: true });
-    if (!res.ok) alert(res.reason);
+    if (!res.ok) console.warn(res.reason);
   });
+
+  if (btnSurrender) {
+  btnSurrender.addEventListener("click", () => {
+    const res = strategoSurrender(LOCAL_PLAYER_ID);
+    if (!res.ok) console.warn(res.reason);
+  });
+}
+
 }
 
 // ===============================
