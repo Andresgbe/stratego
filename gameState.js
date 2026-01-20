@@ -1,19 +1,15 @@
 // Estado único (source of truth). La UI se renderiza desde aquí.
 
 export const STRATEGO_ARMY_CONFIG = [
-  // Classic Stratego (40 piezas) – ranks esperados por el backend
-  { rank: "0", label: "🚩", count: 1, name: "Bandera" },       // FLAG
-  { rank: "11", label: "💣", count: 6, name: "Bomba" },        // BOMB
-  { rank: "10", label: "🕵️", count: 1, name: "Espía" },        // SPY
-  { rank: "9", label: "🏃", count: 8, name: "Explorador" },    // SCOUT
-  { rank: "8", label: "⛏️", count: 5, name: "Minero" },        // MINER
-  { rank: "7", label: "🎖️", count: 4, name: "Sargento" },      // SERGEANT
-  { rank: "6", label: "🎖️", count: 4, name: "Teniente" },      // LIEUTENANT
-  { rank: "5", label: "🎖️", count: 4, name: "Capitán" },       // CAPTAIN
-  { rank: "4", label: "🎖️", count: 3, name: "Mayor" },         // MAJOR
-  { rank: "3", label: "🎖️", count: 2, name: "Coronel" },       // COLONEL
-  { rank: "2", label: "🎖️", count: 1, name: "General" },       // GENERAL
-  { rank: "1", label: "👑", count: 1, name: "Mariscal" },       // MARSHAL
+  { rank: "B", label: "💣", count: 6, name: "Bomba" },
+  { rank: "10", label: "👮", count: 1, name: "Mariscal" },
+  { rank: "9", label: "🎖️", count: 1, name: "General" },
+  { rank: "8", label: "🔫", count: 2, name: "Coronel" },
+  { rank: "S", label: "🕵️", count: 1, name: "Espía" },
+  { rank: "F", label: "🚩", count: 1, name: "Bandera" },
+  // Reducido para demo, como venías usando
+  { rank: "4", label: "💂", count: 3, name: "Sargento" },
+  { rank: "2", label: "🏃", count: 4, name: "Explorador" },
 ];
 
 export function makeDefaultStrategoInventory() {
@@ -39,31 +35,27 @@ export const gameState = {
   eventosActivos: [], // eventos para resolver en "resolucion"
   historial: [], // log de acciones y eventos
 
-  // ===== Stratego (despliegue/board) =====
+  // ===== Stratego (despliegue/board) — Etapa III =====
   stratego: {
-    phase: "DEPLOYMENT", // DEPLOYMENT | HANDSHAKE | BATTLE | GAME_OVER
+    phase: "DEPLOYMENT",
     board: {},
     inventory: {},
     ready: {},
-
-    // Networking PvP (se llena al entrar a una partida online)
     net: {
       active: false,
       matchId: null,
-      mode: null, // opcional si lo usas
-      protocolMode: null, // 'FETCH_FIRST' | 'SOCKET_FIRST'
-      team: null, // 'RED' | 'BLUE'
-      localPlayerId: 1, // 1 si RED, 2 si BLUE
+      protocolMode: null,
+      mode: null,
+      team: null,
+      localPlayerId: 1,
       opponentUsername: null,
     },
-
+    winnerPlayerId: null,
+    turnOwnerId: 1,
     winnerPlayerId: null,
     gameOverReason: null,
-
-    turnOwnerId: 1,
     pveAuto: false,
     lastCombat: null,
-
     ui: {
       selectedCell: null,
     },
@@ -92,22 +84,23 @@ export function resetStrategoState({ playerIds = [1, 2] } = {}) {
   gameState.stratego.phase = "DEPLOYMENT";
   gameState.stratego.board = {};
   gameState.stratego.winnerPlayerId = null;
-  gameState.stratego.gameOverReason = null;
   gameState.stratego.ui.selectedCell = null;
   gameState.stratego.turnOwnerId = playerIds[0] ?? 1;
   gameState.stratego.lastCombat = null;
 
+  // Networking context (PvP) resets by default
+  if (gameState.stratego.net) {
+    gameState.stratego.net.active = false;
+    gameState.stratego.net.matchId = null;
+    gameState.stratego.net.protocolMode = null;
+    gameState.stratego.net.mode = null;
+    gameState.stratego.net.team = null;
+    gameState.stratego.net.localPlayerId = 1;
+    gameState.stratego.net.opponentUsername = null;
+  }
+
   gameState.stratego.inventory = {};
   gameState.stratego.ready = {};
-
-  // Reset net context (por defecto OFF)
-  gameState.stratego.net.active = false;
-  gameState.stratego.net.matchId = null;
-  gameState.stratego.net.mode = null;
-  gameState.stratego.net.protocolMode = null;
-  gameState.stratego.net.team = null;
-  gameState.stratego.net.localPlayerId = playerIds[0] ?? 1;
-  gameState.stratego.net.opponentUsername = null;
 
   for (const pid of playerIds) {
     gameState.stratego.inventory[pid] = makeDefaultStrategoInventory();

@@ -13,19 +13,32 @@ import {
   strategoMove,
   strategoGetLegalTargets,
   strategoResetAll,
+  strategoSurrender,
+  strategoIsPvPActive,
+  strategoGetLocalPlayerId,
 } from "./gameEngine.js";
 
 // ===============================
 // Config / helpers
 // ===============================
-const LOCAL_PLAYER_ID = 1; // demo (luego lo conectas a login/rol)
+function getLocalPlayerId() {
+  const st = getState();
+  return strategoGetLocalPlayerId ? strategoGetLocalPlayerId() : (st?.stratego?.net?.localPlayerId || 1);
+}
+
+function getLocalTeam() {
+  const st = getState();
+  return String(st?.stratego?.net?.team || "RED");
+}
 
 function isWater(r, c) {
   return (r === 4 || r === 5) && (c === 2 || c === 3 || c === 6 || c === 7);
 }
 
 function isLocalDeployZone(r) {
-  // Para el jugador local (P1): filas 0..3
+  // RED: filas 0..3 | BLUE: filas 6..9
+  const team = getLocalTeam();
+  if (team === "BLUE") return r >= 6 && r <= 9;
   return r >= 0 && r <= 3;
 }
 
@@ -48,7 +61,7 @@ function canInteractDeployment(state) {
   return (
     state?.fase === "planificacion" &&
     state?.stratego?.phase === "DEPLOYMENT" &&
-    !state?.stratego?.ready?.[LOCAL_PLAYER_ID]
+    !state?.stratego?.ready?.[getLocalPlayerId()]
   );
 }
 
@@ -136,7 +149,7 @@ function ensureBoardGrid() {
         // Inventario -> Tablero
         if (payload.source === "inventory") {
           const res = strategoPlaceFromInventory({
-            playerId: LOCAL_PLAYER_ID,
+            playerId: getLocalPlayerId(),
             rank: payload.rank,
             targetCellId,
           });
@@ -147,7 +160,7 @@ function ensureBoardGrid() {
         // Tablero -> Tablero
         if (payload.source === "board") {
           const res = strategoMoveOrSwapDeployment({
-            playerId: LOCAL_PLAYER_ID,
+            playerId: getLocalPlayerId(),
             fromCellId: payload.fromCellId,
             toCellId: targetCellId,
           });
@@ -160,7 +173,7 @@ function ensureBoardGrid() {
         if (state?.stratego?.phase !== "BATTLE") return;
 
         // solo el jugador con turno puede interactuar
-        if (state?.stratego?.turnOwnerId !== LOCAL_PLAYER_ID) return;
+        if (state?.stratego?.turnOwnerId !== getLocalPlayerId()) return;
 
         const clickedCellId = cell.id;
         const board = state?.stratego?.board || {};
@@ -169,14 +182,14 @@ function ensureBoardGrid() {
 
         // Si clickeo mi propia pieza móvil => seleccionar
         // Si clickeo mi propia pieza => seleccionar (toggle)
-        if (piece && piece.ownerId === LOCAL_PLAYER_ID) {
+        if (piece && piece.ownerId === getLocalPlayerId()) {
           if (selected === clickedCellId) {
-            const res = strategoSelectCell(LOCAL_PLAYER_ID, null);
+            const res = strategoSelectCell(getLocalPlayerId(), null);
             if (!res.ok) console.warn(res.reason);
             return;
           }
 
-          const res = strategoSelectCell(LOCAL_PLAYER_ID, clickedCellId);
+          const res = strategoSelectCell(getLocalPlayerId(), clickedCellId);
           if (!res.ok) console.warn(res.reason);
           return;
         }
@@ -184,11 +197,26 @@ function ensureBoardGrid() {
         // Si ya tengo selección => intento mover/atacar
         // Si ya tengo selección => intento mover/atacar (solo si es destino legal)
         if (selected) {
-          const targets = strategoGetLegalTargets(LOCAL_PLAYER_ID, selected);
+          const targets = strategoGetLegalTargets(getLocalPlayerId(), selected);
           if (!targets.includes(clickedCellId)) return;
 
+          // PvP: el servidor es autoritativo. Enviamos el movimiento y esperamos opponent_moved / combat_result.
+          const st = getState();
+          if (strategoIsPvPActive && strategoIsPvPActive()) {
+            const net = window.__strategoNet;
+            const matchId = st?.stratego?.net?.matchId;
+            if (net && matchId) {
+              net.sendMove({ matchId, fromCellId: selected, toCellId: clickedCellId }).catch((e) => console.warn(e));
+            }
+            // limpiamos selección localmente para UX
+            const clr = strategoSelectCell(getLocalPlayerId(), null);
+            if (!clr.ok) console.warn(clr.reason);
+            return;
+          }
+
+          // PvE/local
           const res = strategoMove({
-            playerId: LOCAL_PLAYER_ID,
+            playerId: getLocalPlayerId(),
             fromCellId: selected,
             toCellId: clickedCellId,
           });
@@ -259,9 +287,11 @@ function renderBoard(state) {
 
     const def = rankToDef(piece.rank);
 
+    const localId = getLocalPlayerId();
+
     // En despliegue: solo renderizamos al jugador local
     if (phase === "DEPLOYMENT") {
-      if (piece.ownerId !== LOCAL_PLAYER_ID) continue;
+      if (piece.ownerId !== localId) continue;
       const label = def?.label ?? piece.rank;
 
       const el = createPieceElement({
@@ -276,7 +306,7 @@ function renderBoard(state) {
     }
 
     // Fuera de despliegue (HANDSHAKE/BATTLE/GAME_OVER): enemigo oculto
-    if (piece.ownerId === LOCAL_PLAYER_ID) {
+    if (piece.ownerId === localId) {
       const label = def?.label ?? piece.rank;
       const el = createPieceElement({
         rank: piece.rank,
@@ -286,7 +316,7 @@ function renderBoard(state) {
       });
       cell.appendChild(el);
     } else {
-      const reveal = phase === "GAME_OVER";
+      const reveal = phase === "GAME_OVER" || piece.isRevealed || String(piece.rank) !== "-1";
       const label = reveal ? (def?.label ?? piece.rank) : "❓";
 
       const el = createPieceElement({
@@ -305,7 +335,7 @@ function renderBoard(state) {
     const el = document.getElementById(selected);
     if (el) el.classList.add("selected");
 
-    const targets = strategoGetLegalTargets(LOCAL_PLAYER_ID, selected);
+    const targets = strategoGetLegalTargets(getLocalPlayerId(), selected);
     for (const cid of targets) {
       const t = document.getElementById(cid);
       if (t) t.classList.add("valid-move");
@@ -359,7 +389,7 @@ function renderInventory(state) {
 
   piecesContainer.innerHTML = "";
 
-  const inv = state?.stratego?.inventory?.[LOCAL_PLAYER_ID] || {};
+  const inv = state?.stratego?.inventory?.[getLocalPlayerId()] || {};
   const interactive = canInteractDeployment(state);
 
   for (const def of STRATEGO_ARMY_CONFIG) {
@@ -416,20 +446,20 @@ function renderAll(state) {
 // ===============================
 if (btnRandom) {
   btnRandom.addEventListener("click", () => {
-    const res = strategoRandomizeDeployment(LOCAL_PLAYER_ID);
+    const res = strategoRandomizeDeployment(getLocalPlayerId());
     if (!res.ok) console.warn(res.reason);
   });
 }
 
 if (btnClear) {
   btnClear.addEventListener("click", () => {
-    strategoClearDeployment(LOCAL_PLAYER_ID);
+    strategoClearDeployment(getLocalPlayerId());
   });
 }
 
 if (btnSave) {
   btnSave.addEventListener("click", () => {
-    const data = strategoExportDeployment(LOCAL_PLAYER_ID);
+    const data = strategoExportDeployment(getLocalPlayerId());
     localStorage.setItem("stratego_setup", JSON.stringify(data));
     console.warn("📜 Grimorio guardado en el archivo local.");
   });
@@ -459,20 +489,55 @@ if (btnLoad) {
       if (rank) normalized[cid] = { rank };
     }
 
-    const res = strategoImportDeployment(LOCAL_PLAYER_ID, normalized);
+    const res = strategoImportDeployment(getLocalPlayerId(), normalized);
     if (!res.ok) console.warn(res.reason);
   });
 }
 
 if (btnReady) {
   btnReady.addEventListener("click", () => {
-    const res = strategoSetReady(LOCAL_PLAYER_ID, { autoEnemy: true });
+    const pid = getLocalPlayerId();
+    const st = getState();
+
+    // PvP: enviar setup al servidor y quedar esperando al rival
+    if (strategoIsPvPActive && strategoIsPvPActive()) {
+      const net = window.__strategoNet;
+      const matchId = st?.stratego?.net?.matchId;
+
+      // Export deployment shape: { "cell-r-c": {rank} }
+      // API expects pieces: [{ type, rank, position: {x,y} }]
+      const deployment = strategoExportDeployment(pid);
+      const pieces = Object.entries(deployment || {}).map(([cid, obj]) => {
+        const m = /^cell-(\d+)-(\d+)$/.exec(cid);
+        const y = Number(m?.[1]);
+        const x = Number(m?.[2]);
+        const rank = Number(obj?.rank);
+
+        // Server wants both type + rank (type name is optional in some servers, but rank is required)
+        return {
+          rank,
+          type: "UNKNOWN",
+          position: { x, y },
+        };
+      });
+
+      if (net && matchId) {
+        net.sendSetup({ matchId, pieces }).catch((e) => console.warn(e));
+      }
+
+      const res = strategoSetReady(pid, { autoEnemy: false });
+      if (!res.ok) console.warn(res.reason);
+      return;
+    }
+
+    // PvE/local
+    const res = strategoSetReady(pid, { autoEnemy: true });
     if (!res.ok) console.warn(res.reason);
   });
 
   if (btnSurrender) {
   btnSurrender.addEventListener("click", () => {
-    const res = strategoSurrender(LOCAL_PLAYER_ID);
+    const res = strategoSurrender(getLocalPlayerId());
     if (!res.ok) console.warn(res.reason);
   });
 }
@@ -488,6 +553,15 @@ if (warChatForm && warChatMsgs && warChatInput) {
 
     const text = warChatInput.value.trim();
     if (!text) return;
+
+    const st = getState();
+    if (strategoIsPvPActive && strategoIsPvPActive()) {
+      const net = window.__strategoNet;
+      const matchId = st?.stratego?.net?.matchId;
+      if (net && matchId) {
+        net.sendMatchChatViaWs({ matchId, content: text });
+      }
+    }
 
     warChatMsgs.innerHTML += `<div class="msg" style="color: #4caf50;"><strong>Tú:</strong> ${escapeHtml(
       text

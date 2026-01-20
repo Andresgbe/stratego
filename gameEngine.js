@@ -480,15 +480,9 @@ export function strategoSetReady(playerId = 1, { autoEnemy = true } = {}) {
 // =========================================================
 // 2.1) PvP hook — iniciar batalla desde evento del servidor
 // =========================================================
-
 export function strategoStartBattleFromServer({ turnOwnerId = 1 } = {}) {
   // El servidor es la autoridad de inicio en PvP.
   // Aquí solo aplicamos el evento de forma determinística.
-
-  if (_handshakeTimer) {
-    clearTimeout(_handshakeTimer);
-    _handshakeTimer = null;
-  }
 
   gameState.stratego.pveAuto = false;
   gameState.stratego.phase = "BATTLE";
@@ -510,13 +504,18 @@ export function strategoStartBattleFromServer({ turnOwnerId = 1 } = {}) {
 // =========================================================
 
 function getRankValue(rank) {
-  // Valores base para comparar (solo numéricos)
+  // En Stratego: menor número = mayor jerarquía (1 > 2 > ... > 10).
+  // Normalizamos a un valor donde "más alto" gana.
   const n = Number(rank);
-  return Number.isFinite(n) ? n : 0;
+  if (!Number.isFinite(n)) return 0;
+  // 1..10 => 11..2
+  if (n >= 1 && n <= 10) return 12 - n;
+  return 0;
 }
 
 function isMovableRank(rank) {
-  return rank !== "B" && rank !== "F";
+  // Inmovibles: Bandera (0) y Bombas (11)
+  return String(rank) !== "0" && String(rank) !== "11";
 }
 
 function isOrthogonalStep(a, b) {
@@ -562,29 +561,29 @@ function isClearScoutPath(fromId, toId, board) {
 function resolveCombat(attacker, defender) {
   // retorna { outcome, attackerDies, defenderDies, special }
   // outcome: "ATTACKER_WINS" | "DEFENDER_WINS" | "TIE"
-  const a = attacker.rank;
-  const d = defender.rank;
+  const a = String(attacker.rank);
+  const d = String(defender.rank);
 
   // Captura bandera
-  if (d === "F") {
+  if (d === "0") {
     return { outcome: "ATTACKER_WINS", attackerDies: false, defenderDies: true, special: "FLAG_CAPTURED" };
   }
 
-  // Bombas: por regla Etapa IV (demo): "4" desactiva bombas
-  if (d === "B") {
-    if (a === "4") {
+  // Bombas: solo Minero (8) desactiva
+  if (d === "11") {
+    if (a === "8") {
       return { outcome: "ATTACKER_WINS", attackerDies: false, defenderDies: true, special: "BOMB_DEFUSED" };
     }
     return { outcome: "DEFENDER_WINS", attackerDies: true, defenderDies: false, special: "BOMB_EXPLODES" };
   }
 
-  // Espía vs Mariscal SOLO si espía ataca
-  if (a === "S" && d === "10") {
+  // Espía (10) vs Mariscal (1) SOLO si espía ataca
+  if (a === "10" && d === "1") {
     return { outcome: "ATTACKER_WINS", attackerDies: false, defenderDies: true, special: "SPY_ASSASSINATES" };
   }
 
   // Espía normalmente es el más débil
-  if (a === "S" && d !== "10") {
+  if (a === "10" && d !== "1") {
     return { outcome: "DEFENDER_WINS", attackerDies: true, defenderDies: false, special: "SPY_LOSES" };
   }
 
@@ -614,8 +613,8 @@ function hasAnyLegalMove(playerId) {
       cellId(A.r, A.c + 1),
     ];
 
-    // Explorador: también intentamos rayos hasta borde
-    if (piece.rank === "2") {
+    // Explorador (Scout = 9): también intentamos rayos hasta borde
+    if (String(piece.rank) === "9") {
       // arriba
       for (let r = A.r - 1; r >= 0; r--) candidates.push(cellId(r, A.c));
       // abajo
@@ -635,7 +634,7 @@ function hasAnyLegalMove(playerId) {
       const target = board[toId];
       if (target && target.ownerId === playerId) continue;
 
-      if (piece.rank === "2") {
+      if (String(piece.rank) === "9") {
         if (!isClearScoutPath(fromId, toId, board)) continue;
         return true;
       } else {
@@ -668,7 +667,7 @@ function listLegalMovesForPlayer(playerId) {
       if (target && target.ownerId === playerId) return;
 
       // Validación por tipo de pieza
-      if (piece.rank === "2") {
+      if (String(piece.rank) === "9") {
         if (!isClearScoutPath(fromId, toId, board)) return;
       } else {
         if (!isOrthogonalStep(fromId, toId)) return;
@@ -678,7 +677,7 @@ function listLegalMovesForPlayer(playerId) {
     };
 
     // Movimientos
-    if (piece.rank === "2") {
+    if (String(piece.rank) === "9") {
       // explorador: rayos
       for (let r = A.r - 1; r >= 0; r--) pushIfOk(cellId(r, A.c));
       for (let r = A.r + 1; r < 10; r++) pushIfOk(cellId(r, A.c));
@@ -750,7 +749,7 @@ export function strategoGetLegalTargets(playerId = 1, fromCellId) {
     if (target && target.ownerId === playerId) return;
 
     // Validación por tipo de pieza
-    if (piece.rank === "2") {
+    if (String(piece.rank) === "9") {
       if (!isClearScoutPath(fromCellId, toId, board)) return;
     } else {
       if (!isOrthogonalStep(fromCellId, toId)) return;
@@ -759,7 +758,7 @@ export function strategoGetLegalTargets(playerId = 1, fromCellId) {
     targets.push(toId);
   };
 
-  if (piece.rank === "2") {
+  if (String(piece.rank) === "9") {
     // Explorador: rayos
     for (let r = A.r - 1; r >= 0; r--) pushIfOk(cellId(r, A.c));
     for (let r = A.r + 1; r < 10; r++) pushIfOk(cellId(r, A.c));
@@ -818,7 +817,7 @@ export function strategoMove({ playerId = 1, fromCellId, toCellId }) {
   if (target && target.ownerId === playerId) return { ok: false, reason: "Destino ocupado por tu pieza" };
 
   // Validación de movimiento
-  if (moving.rank === "2") {
+  if (String(moving.rank) === "9") {
     if (!isClearScoutPath(fromCellId, toCellId, board))
       return { ok: false, reason: "Movimiento inválido (Explorador requiere camino libre en línea recta)" };
   } else {
@@ -942,4 +941,254 @@ function endGame(winnerPlayerId, reason, logMessage) {
   gameState.stratego.gameOverReason = reason;
   pushLog("system", logMessage, { winnerPlayerId });
   notify();
+}
+
+// =========================================================
+// 5) Stratego — Networking PvP helpers (server events -> engine)
+// =========================================================
+
+function xyToCellId({ x, y }) {
+  return cellId(Number(y), Number(x));
+}
+
+function ensureOpponentId(localPlayerId) {
+  return localPlayerId === 1 ? 2 : 1;
+}
+
+export function strategoSetNetworkContext({
+  active = true,
+  matchId = null,
+  protocolMode = null,
+  mode = null,
+  team = null,
+  localPlayerId = 1,
+  opponentUsername = null,
+} = {}) {
+  gameState.stratego.net.active = Boolean(active);
+  gameState.stratego.net.matchId = matchId;
+  gameState.stratego.net.protocolMode = protocolMode;
+  gameState.stratego.net.mode = mode;
+  gameState.stratego.net.team = team;
+  gameState.stratego.net.localPlayerId = localPlayerId;
+  gameState.stratego.net.opponentUsername = opponentUsername;
+  notify();
+}
+
+export function strategoClearNetworkContext() {
+  gameState.stratego.net.active = false;
+  gameState.stratego.net.matchId = null;
+  gameState.stratego.net.protocolMode = null;
+  gameState.stratego.net.mode = null;
+  gameState.stratego.net.team = null;
+  gameState.stratego.net.localPlayerId = 1;
+  gameState.stratego.net.opponentUsername = null;
+  notify();
+}
+
+export function strategoGetLocalPlayerId() {
+  return Number(gameState.stratego.net.localPlayerId || 1);
+}
+
+export function strategoGetOpponentPlayerId() {
+  return ensureOpponentId(strategoGetLocalPlayerId());
+}
+
+export function strategoIsPvPActive() {
+  return Boolean(gameState.stratego.net.active && gameState.stratego.net.matchId);
+}
+
+/**
+ * Hydrates the local board from the server snapshot (GET /api/matches/{matchId}/state).
+ * The server is the source of truth for positions + fog-of-war.
+ */
+export function strategoHydrateFromServerSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.board)) {
+    return { ok: false, reason: "Snapshot inválido" };
+  }
+
+  const localTeam = String(gameState.stratego.net.team || "RED");
+  const localId = strategoGetLocalPlayerId();
+  const oppId = ensureOpponentId(localId);
+
+  gameState.stratego.board = {};
+
+  for (const p of snapshot.board) {
+    if (!p || !p.position) continue;
+    const cid = xyToCellId(p.position);
+
+    const isLocal = String(p.team) === localTeam;
+    const ownerId = isLocal ? localId : oppId;
+
+    // Enemy fog-of-war:
+    // - type: "HIDDEN" and rank: -1 for unknown pieces.
+    // - if revealed previously, server returns real type/rank.
+    const rank = Number(p.rank);
+    const normalizedRank = Number.isFinite(rank) ? String(rank) : "-1";
+
+    gameState.stratego.board[cid] = {
+      ownerId,
+      rank: normalizedRank,
+      type: p.type || (rank === -1 ? "HIDDEN" : "UNKNOWN"),
+      isRevealed: Boolean(p.isRevealed),
+      team: p.team,
+    };
+  }
+
+  // Turn comes as team string
+  const turnTeam = String(snapshot.turn || "RED");
+  gameState.stratego.turnOwnerId = turnTeam === localTeam ? localId : oppId;
+
+  // Ensure we're in battle.
+  gameState.stratego.phase = "BATTLE";
+  gameState.stratego.lastCombat = null;
+  gameState.stratego.ui.selectedCell = null;
+
+  notify();
+  return { ok: true };
+}
+
+export function strategoApplyMatchStartedFromServer({ team, yourTurn } = {}) {
+  // Server personalizes this event per player.
+  const localTeam = String(team || gameState.stratego.net.team || "RED");
+  gameState.stratego.net.team = localTeam;
+
+  const localId = strategoGetLocalPlayerId();
+  const oppId = ensureOpponentId(localId);
+
+  gameState.stratego.phase = "BATTLE";
+  gameState.stratego.turnOwnerId = yourTurn ? localId : oppId;
+  gameState.stratego.lastCombat = null;
+  gameState.stratego.ui.selectedCell = null;
+
+  notify();
+  return { ok: true };
+}
+
+export function strategoApplyOpponentMovedFromServer(payload) {
+  if (!payload?.move?.from || !payload?.move?.to) {
+    return { ok: false, reason: "Payload opponent_moved inválido" };
+  }
+
+  const fromId = xyToCellId(payload.move.from);
+  const toId = xyToCellId(payload.move.to);
+
+  const localTeam = String(gameState.stratego.net.team || "RED");
+  const moverTeam = String(payload.team || "");
+  const localId = strategoGetLocalPlayerId();
+  const oppId = ensureOpponentId(localId);
+
+  // Determine mover owner
+  const moverOwnerId = moverTeam === localTeam ? localId : oppId;
+
+  const board = gameState.stratego.board;
+  const moving = board[fromId];
+
+  // If we didn't have the piece (desync), create a placeholder.
+  const piece = moving || {
+    ownerId: moverOwnerId,
+    rank: "-1",
+    type: "HIDDEN",
+    isRevealed: false,
+    team: moverTeam,
+  };
+
+  delete board[fromId];
+  board[toId] = piece;
+
+  gameState.stratego.turnOwnerId = moverOwnerId === localId ? oppId : localId;
+  gameState.turno += 1;
+
+  notify();
+  return { ok: true };
+}
+
+export function strategoApplyCombatResultFromServer(payload) {
+  if (!payload?.attacker || !payload?.defender) {
+    return { ok: false, reason: "Payload combat_result inválido" };
+  }
+
+  const localId = strategoGetLocalPlayerId();
+  const oppId = ensureOpponentId(localId);
+  const localTeam = String(gameState.stratego.net.team || "RED");
+
+  const attackerFromId = xyToCellId(payload.attacker.position);
+  const defenderCellId = xyToCellId(payload.defender.position);
+
+  const attackerIsLocal = String(payload.attacker.team) === localTeam;
+  const defenderIsLocal = String(payload.defender.team) === localTeam;
+
+  const attackerOwnerId = attackerIsLocal ? localId : oppId;
+  const defenderOwnerId = defenderIsLocal ? localId : oppId;
+
+  const board = gameState.stratego.board;
+
+  // Ensure pieces exist in board (may be HIDDEN until now)
+  const attackerPiece = {
+    ownerId: attackerOwnerId,
+    rank: String(payload.attacker.rank),
+    type: payload.attacker.type,
+    isRevealed: true,
+    team: payload.attacker.team,
+  };
+  const defenderPiece = {
+    ownerId: defenderOwnerId,
+    rank: String(payload.defender.rank),
+    type: payload.defender.type,
+    isRevealed: true,
+    team: payload.defender.team,
+  };
+
+  // Place them where they belong for resolution
+  board[attackerFromId] = attackerPiece;
+  board[defenderCellId] = defenderPiece;
+
+  const result = resolveCombat(attackerPiece, defenderPiece);
+
+  // Apply casualties
+  if (result.attackerDies) delete board[attackerFromId];
+  if (result.defenderDies) delete board[defenderCellId];
+
+  // If attacker survives, it moves into defender cell
+  if (!result.attackerDies) {
+    delete board[attackerFromId];
+    board[defenderCellId] = attackerPiece;
+  }
+
+  // Win condition: flag captured
+  if (result.special === "FLAG_CAPTURED") {
+    endGame(attackerOwnerId, "FLAG_CAPTURED", "¡Bandera capturada! Fin de la partida.");
+    gameState.stratego.lastCombat = {
+      fromCellId: attackerFromId,
+      toCellId: defenderCellId,
+      attacker: attackerPiece,
+      defender: defenderPiece,
+      result,
+      serverTimestamp: payload.timestamp || null,
+    };
+    notify();
+    return { ok: true };
+  }
+
+  // Next turn: always flips after a move/combat
+  const nextTurnOwner = attackerOwnerId === localId ? oppId : localId;
+  gameState.stratego.turnOwnerId = nextTurnOwner;
+  gameState.turno += 1;
+
+  gameState.stratego.lastCombat = {
+    fromCellId: attackerFromId,
+    toCellId: defenderCellId,
+    attacker: attackerPiece,
+    defender: defenderPiece,
+    result,
+    isDraw: Boolean(payload.isDraw),
+    serverTimestamp: payload.timestamp || null,
+  };
+
+  // Victory by no-moves (local validation)
+  if (!hasAnyLegalMove(nextTurnOwner) && !gameState.stratego.winnerPlayerId) {
+    endGame(attackerOwnerId, "NO_MOVES", "Victoria: el oponente no tiene movimientos");
+  }
+
+  notify();
+  return { ok: true };
 }

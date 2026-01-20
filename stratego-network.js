@@ -157,7 +157,7 @@ export class StrategoNetwork {
     // Lobby presence
     bind("lobby_update", "lobbyUpdate");
 
-    // Matchmaking + game events (we’ll use them in later steps, but safe to bind now)
+    // Matchmaking + game events
     bind("challenge_received", "challengeReceived");
     bind("challenge_answered", "challengeAnswered");
     bind("match_started", "matchStarted");
@@ -169,8 +169,25 @@ export class StrategoNetwork {
     bind("match_cancelled", "matchCancelled");
     bind("rematch_started", "rematchStarted");
 
-    es.onerror = () => {
-      this.emit("error", { where: "sse", error: "SSE connection error" });
+    // Auto-reconnect (silent)
+    this.sse.onerror = () => {
+      try {
+        this.sse.close();
+      } catch {}
+
+      const delay = this._sseRetryMs || 1000;
+      this._sseRetryMs = Math.min(delay * 2, 15000);
+
+      clearTimeout(this._sseRetryTimer);
+      this._sseRetryTimer = setTimeout(() => {
+        try {
+          this.connectSse(); // FIX: was startSse()
+        } catch {}
+      }, delay);
+    };
+
+    this.sse.onopen = () => {
+      this._sseRetryMs = 1000;
     };
 
     return es;
@@ -179,18 +196,21 @@ export class StrategoNetwork {
   connectWs() {
     if (!this.userId) throw new Error("Cannot connect WS without userId");
 
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING)
+    ) {
       return this.ws;
     }
 
-    // The docs specify path: /gateway. Auth mechanism is not explicitly shown,
-    // so we pass userId as query (common pattern in this course server).
     const url = `${this.wsUrl}/gateway?userId=${encodeURIComponent(this.userId)}`;
     const ws = new WebSocket(url);
     this.ws = ws;
 
     ws.onopen = () => this.emit("debug", { where: "ws", message: "WS open" });
-    ws.onerror = () => this.emit("error", { where: "ws", error: "WebSocket error" });
+    ws.onerror = () =>
+      this.emit("error", { where: "ws", error: "WebSocket error" });
     ws.onclose = () => this.emit("debug", { where: "ws", message: "WS closed" });
 
     ws.onmessage = (evt) => {
@@ -205,8 +225,7 @@ export class StrategoNetwork {
           return;
         }
 
-        // Many servers forward game events also through WS depending on protocolMode
-        // so we map a few common ones:
+        // Map WS event names to UI events (IMPORTANT: includes lobby_update)
         const map = {
           lobby_update: "lobbyUpdate",
           challenge_received: "challengeReceived",
@@ -226,10 +245,12 @@ export class StrategoNetwork {
           return;
         }
 
-        // fallback for unexpected messages
         this.emit("debug", { where: "ws", message: "Unmapped WS message", msg });
       } catch (e) {
-        this.emit("error", { where: "ws", error: `WS message parse failed: ${String(e)}` });
+        this.emit("error", {
+          where: "ws",
+          error: `WS message parse failed: ${String(e)}`,
+        });
       }
     };
 
@@ -249,7 +270,7 @@ export class StrategoNetwork {
   }
 
   // =============================
-  // Matchmaking (PvP/PvE)
+  // Matchmaking + Match (Etapa II-IV)
   // =============================
 
   /**
@@ -350,5 +371,124 @@ export class StrategoNetwork {
       return { ok: true };
     }
   }
-}
 
+  /**
+   * GET /api/matches/{matchId}/state (snapshot)
+   */
+  async getMatchState({ matchId }, { timeoutMs = 8000 } = {}) {
+    const res = await this.fetchWithTimeout(
+      `${this.baseUrl}/api/matches/${encodeURIComponent(matchId)}/state`,
+      {
+        method: "GET",
+        headers: {
+          ...this.getAuthHeaders(),
+        },
+      },
+      timeoutMs
+    );
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Snapshot failed (${res.status}): ${text}`);
+    }
+
+    return res.json();
+  }
+
+  /**
+   * POST /api/matches/{matchId}/moves
+   */
+  async sendMove({ matchId, from, to }, { timeoutMs = 8000 } = {}) {
+    const res = await this.fetchWithTimeout(
+      `${this.baseUrl}/api/matches/${encodeURIComponent(matchId)}/moves`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...this.getAuthHeaders(),
+        },
+        body: JSON.stringify({ from, to }),
+      },
+      timeoutMs
+    );
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Move send failed (${res.status}): ${text}`);
+    }
+
+    const t = await res.text().catch(() => "");
+    try {
+      return t ? JSON.parse(t) : { ok: true };
+    } catch {
+      return { ok: true };
+    }
+  }
+
+  /**
+   * POST /api/matches/{matchId}/forfeit
+   */
+  async forfeit({ matchId, reason = "VOLUNTARY" }, { timeoutMs = 8000 } = {}) {
+    const res = await this.fetchWithTimeout(
+      `${this.baseUrl}/api/matches/${encodeURIComponent(matchId)}/forfeit`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...this.getAuthHeaders(),
+        },
+        body: JSON.stringify({ reason }),
+      },
+      timeoutMs
+    );
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Forfeit failed (${res.status}): ${text}`);
+    }
+
+    const t = await res.text().catch(() => "");
+    try {
+      return t ? JSON.parse(t) : { ok: true };
+    } catch {
+      return { ok: true };
+    }
+  }
+
+  /**
+   * POST /api/matches/{matchId}/report-infraction
+   */
+  async reportInfraction(
+    { matchId, reason, move },
+    { timeoutMs = 8000 } = {}
+  ) {
+    const res = await this.fetchWithTimeout(
+      `${this.baseUrl}/api/matches/${encodeURIComponent(matchId)}/report-infraction`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...this.getAuthHeaders(),
+        },
+        body: JSON.stringify({ reason, move }),
+      },
+      timeoutMs
+    );
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Report infraction failed (${res.status}): ${text}`);
+    }
+
+    const t = await res.text().catch(() => "");
+    try {
+      return t ? JSON.parse(t) : { ok: true };
+    } catch {
+      return { ok: true };
+    }
+  }
+
+  sendMatchChatViaWs({ matchId, content }) {
+    return this.sendWs("send_match_chat", { matchId, content });
+  }
+}
